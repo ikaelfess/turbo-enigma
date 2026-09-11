@@ -1,0 +1,5 @@
+[tools]
+go = "1.27"
+"go:github.com/pressly/goose/v3/cmd/goose" = "latest"
+golangci-lint = "latest"
+lefthook = "latest"

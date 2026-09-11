@@ -1,0 +1,84 @@
+x-go-service-env: &go-service-env
+  - SERVER_ADDRESS
+  - DATABASE_URL
+
+x-postgres-migrations-env: &postgres-migrations-env
+  - GOOSE_DRIVER
+  - GOOSE_DBSTRING
+  - GOOSE_MIGRATION_DIR
+  - GOOSE_TABLE
+
+x-postgres-env: &postgres-env
+  - POSTGRES_DB
+  - POSTGRES_USER
+  - POSTGRES_PASSWORD
+
+x-base-service: &base-service
+  networks:
+    - default
+
+x-go-service: &go-service
+  <<: *base-service
+  build: .
+  depends_on:
+    postgres:
+      condition: service_healthy
+    postgres_migrations:
+      condition: service_completed_successfully
+  environment: *go-service-env
+  volumes:
+  - .:/app
+
+x-postgres-service: &postgres-service
+  <<: *base-service
+  image: postgres:18.4-alpine
+  ports:
+    - "5432:5432"
+  environment: *postgres-env
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+    interval: 2s
+    timeout: 3s
+    retries: 10
+
+services:
+  api:
+    <<: *go-service
+    command: ["go", "run", "./cmd/api"]
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
+
+  outbox_publisher:
+    <<: *go-service
+    command: ["go", "run", "./cmd/outbox-publisher"]
+
+  event_worker:
+    <<: *go-service
+    command: ["go", "run", "./cmd/event-worker"]
+
+  postgres_migrations:
+    <<: *go-service
+    command: ["go", "tool", "goose", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *postgres-migrations-env
+    volumes:
+      - ./migrations:/app/migrations
+
+  postgres:
+    <<: *postgres-service
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
