@@ -20,8 +20,6 @@ type Config struct {
 	ReadTimeout     time.Duration `env:"READ_TIMEOUT" env-default:"5s"`
 	WriteTimeout    time.Duration `env:"WRITE_TIMEOUT" env-default:"10s"`
 	IdleTimeout     time.Duration `env:"IDLE_TIMEOUT" env-default:"30s"`
-
-	LogLevel string `env:"LOG_LEVEL" env-default:"debug"`
 }
 
 func NewConfig() (Config, error) {
