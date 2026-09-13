@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	apphttp "github.com/ikaelfess/transactional-outbox/internal/adapters/http"
+	httpadapter "github.com/ikaelfess/transactional-outbox/internal/adapters/http"
 	"github.com/ikaelfess/transactional-outbox/internal/domain"
 	"github.com/ikaelfess/transactional-outbox/test/integration/helpers"
 )
@@ -21,15 +21,15 @@ func TestNewOrder(t *testing.T) {
 		helpers.WithDatabaseTemplateManager(t, connectionString, func(t *testing.T, tm *pgdbtemplate.TemplateManager) {
 			tests := []struct {
 				name               string
-				requestBody        apphttp.CreateOrderRequest
+				requestBody        httpadapter.CreateOrderRequest
 				expectedTotalCents int64
 				statusCode         int
 				expectedError      string
 			}{
 				{
 					name: "valid order",
-					requestBody: apphttp.CreateOrderRequest{
-						Items: []apphttp.CreateOrderItem{
+					requestBody: httpadapter.CreateOrderRequest{
+						Items: []httpadapter.CreateOrderItem{
 							{
 								ItemName:       "Wireless Mouse",
 								Quantity:       1,
@@ -47,16 +47,16 @@ func TestNewOrder(t *testing.T) {
 				},
 				{
 					name: "empty items",
-					requestBody: apphttp.CreateOrderRequest{
-						Items: []apphttp.CreateOrderItem{},
+					requestBody: httpadapter.CreateOrderRequest{
+						Items: []httpadapter.CreateOrderItem{},
 					},
 					statusCode:    http.StatusUnprocessableEntity,
 					expectedError: domain.ErrEmptyOrderItems.Error(),
 				},
 				{
 					name: "invalid quantity",
-					requestBody: apphttp.CreateOrderRequest{
-						Items: []apphttp.CreateOrderItem{
+					requestBody: httpadapter.CreateOrderRequest{
+						Items: []httpadapter.CreateOrderItem{
 							{
 								ItemName:       "A",
 								Quantity:       0,
@@ -69,8 +69,8 @@ func TestNewOrder(t *testing.T) {
 				},
 				{
 					name: "negative unit price",
-					requestBody: apphttp.CreateOrderRequest{
-						Items: []apphttp.CreateOrderItem{
+					requestBody: httpadapter.CreateOrderRequest{
+						Items: []httpadapter.CreateOrderItem{
 							{
 								ItemName:       "A",
 								Quantity:       1,
@@ -83,8 +83,8 @@ func TestNewOrder(t *testing.T) {
 				},
 				{
 					name: "invalid item name",
-					requestBody: apphttp.CreateOrderRequest{
-						Items: []apphttp.CreateOrderItem{
+					requestBody: httpadapter.CreateOrderRequest{
+						Items: []httpadapter.CreateOrderItem{
 							{
 								ItemName:       "",
 								Quantity:       1,
@@ -165,9 +165,9 @@ func TestNewOrder(t *testing.T) {
 									rows.Close()
 								})
 
-								var orderItems []apphttp.CreateOrderItem
+								var orderItems []httpadapter.CreateOrderItem
 								for rows.Next() {
-									var item apphttp.CreateOrderItem
+									var item httpadapter.CreateOrderItem
 									err := rows.Scan(
 										&item.ItemName,
 										&item.Quantity,

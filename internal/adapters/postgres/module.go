@@ -12,8 +12,8 @@ var PoolModule = fx.Module(
 	fx.Provide(NewPool),
 )
 
-var RepositoryModule = fx.Module(
-	"postgres-repository",
+var OrderRepositoryModule = fx.Module(
+	"postgres-order-repository",
 
 	fx.Provide(
 		fx.Annotate(
@@ -23,9 +23,10 @@ var RepositoryModule = fx.Module(
 	),
 )
 
-var Module = fx.Module(
-	"postgres",
+var OutboxEventRepositoryModule = fx.Module(
+	"postgres-outbox-event-repository",
 
-	PoolModule,
-	RepositoryModule,
+	fx.Provide(
+		NewOutboxEventRepository,
+	),
 )

@@ -59,7 +59,5 @@ func WithDatabaseTemplateManager(
 func migrationsFS(t *testing.T) fs.FS {
 	t.Helper()
 
-	root := FindProjectRoot(t)
-
-	return os.DirFS(filepath.Join(root, MigrationsDir))
+	return os.DirFS(filepath.Join(FindProjectRoot(t), MigrationsDir))
 }

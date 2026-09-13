@@ -96,14 +96,15 @@ func (t *queryTracer) TraceQueryEnd(
 		return
 	}
 
+	sql := strings.Join(strings.Fields(traceData.sql), " ")
 	event := t.logger.Debug().
-		Str("sql", strings.Join(strings.Fields(traceData.sql), " ")).
-		Float64("duration_ms", float64(time.Since(traceData.start).Microseconds())/1000)
+		Str("sql", sql).
+		Dur("duration_ms", time.Since(traceData.start))
 
 	if data.Err != nil {
 		event = t.logger.Error().
-			Str("sql", strings.Join(strings.Fields(traceData.sql), " ")).
-			Float64("duration_ms", float64(time.Since(traceData.start).Microseconds())/1000).
+			Str("sql", sql).
+			Dur("duration_ms", time.Since(traceData.start)).
 			Err(data.Err)
 	}
 

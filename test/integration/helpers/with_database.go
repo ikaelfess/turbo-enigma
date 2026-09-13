@@ -23,14 +23,16 @@ func WithDatabase(
 	t.Cleanup(func() {
 		require.NoError(
 			t,
-			database.Close(),
-			"database close",
-		)
-
-		require.NoError(
-			t,
 			tm.DropTestDatabase(context.Background(), databaseName),
 			"template manager drop test database",
+		)
+	})
+
+	t.Cleanup(func() {
+		require.NoError(
+			t,
+			database.Close(),
+			"database close",
 		)
 	})
 

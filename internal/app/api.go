@@ -8,7 +8,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 
-	apphttp "github.com/ikaelfess/transactional-outbox/internal/adapters/http"
+	httpadapter "github.com/ikaelfess/transactional-outbox/internal/adapters/http"
 	"github.com/ikaelfess/transactional-outbox/internal/adapters/postgres"
 	"github.com/ikaelfess/transactional-outbox/internal/config"
 	"github.com/ikaelfess/transactional-outbox/internal/observability"
@@ -19,9 +19,10 @@ var ApiModule = fx.Module(
 	"api",
 
 	config.Module,
-	postgres.Module,
+	postgres.PoolModule,
+	postgres.OrderRepositoryModule,
 	usecase.Module,
-	apphttp.Module,
+	httpadapter.Module,
 	observability.Module,
 	fx.Provide(
 		NewLoggerConfig,

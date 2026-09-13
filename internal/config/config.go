@@ -9,17 +9,21 @@ import (
 // Use one config for all services for simplicity
 // Each service takes what it needs
 type Config struct {
-	ServerAddress string `env:"SERVER_ADDRESS" env-default:"localhost:3000"`
-
+	// database settings
 	DatabaseUrl       string        `env:"DATABASE_URL" env-required:"true"`
-	DBMaxConns        int           `env:"DB_MAX_CONNS" env-default:"5"`
-	DBMinConns        int           `env:"DB_MIN_CONNS" env-default:"1"`
-	DBMaxConnLifetime time.Duration `env:"DB_MAX_CONN_LIFETIME" env-default:"1m"`
+	DBMaxConns        int           `env:"DB_MAX_CONNS" env-default:"20"`
+	DBMinConns        int           `env:"DB_MIN_CONNS" env-default:"5"`
+	DBMaxConnLifetime time.Duration `env:"DB_MAX_CONN_LIFETIME" env-default:"30m"`
 
-	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" env-default:"20s"`
-	ReadTimeout     time.Duration `env:"READ_TIMEOUT" env-default:"5s"`
-	WriteTimeout    time.Duration `env:"WRITE_TIMEOUT" env-default:"10s"`
-	IdleTimeout     time.Duration `env:"IDLE_TIMEOUT" env-default:"30s"`
+	// api server settings
+	ServerAddress     string        `env:"SERVER_ADDRESS" env-default:"localhost:3000"`
+	ShutdownTimeout   time.Duration `env:"SHUTDOWN_TIMEOUT" env-default:"20s"`
+	ReadTimeout       time.Duration `env:"READ_TIMEOUT" env-default:"5s"`
+	WriteTimeout      time.Duration `env:"WRITE_TIMEOUT" env-default:"10s"`
+	IdleTimeout       time.Duration `env:"IDLE_TIMEOUT" env-default:"30s"`
+
+	// outbox-event-publisher worker settings
+	WorkersNum        int           `env:"WORKERS_NUM" env-default:"5"`
 }
 
 func NewConfig() (Config, error) {

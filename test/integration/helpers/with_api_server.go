@@ -10,7 +10,7 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 
-	apphttp "github.com/ikaelfess/transactional-outbox/internal/adapters/http"
+	httpadapter "github.com/ikaelfess/transactional-outbox/internal/adapters/http"
 	"github.com/ikaelfess/transactional-outbox/internal/adapters/postgres"
 	"github.com/ikaelfess/transactional-outbox/internal/usecase"
 )
@@ -25,9 +25,9 @@ func WithApiServer(
 		t,
 		fx.NopLogger,
 
-		postgres.RepositoryModule,
+		postgres.OrderRepositoryModule,
 		usecase.Module,
-		apphttp.Module,
+		httpadapter.Module,
 
 		fx.Provide(
 			func() zerolog.Logger { return zerolog.Nop() },
