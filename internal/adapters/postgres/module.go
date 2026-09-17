@@ -2,31 +2,21 @@ package postgres
 
 import (
 	"go.uber.org/fx"
-
-	"github.com/ikaelfess/transactional-outbox/internal/usecase"
 )
 
-var PoolModule = fx.Module(
-	"postgres-pool",
+var Module = fx.Module(
+	"postgres",
 
-	fx.Provide(NewPool),
-)
-
-var OrderRepositoryModule = fx.Module(
-	"postgres-order-repository",
-
+	StoreModule,
 	fx.Provide(
-		fx.Annotate(
-			NewOrderRepository,
-			fx.As(new(usecase.OrderRepository)),
-		),
+		NewDatabase,
 	),
 )
 
-var OutboxEventRepositoryModule = fx.Module(
-	"postgres-outbox-event-repository",
+var StoreModule = fx.Module(
+	"postgres-store",
 
 	fx.Provide(
-		NewOutboxEventRepository,
+		NewOrderStore,
 	),
 )

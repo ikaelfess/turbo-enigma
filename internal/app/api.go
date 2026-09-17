@@ -19,17 +19,19 @@ var ApiModule = fx.Module(
 	"api",
 
 	config.Module,
-	postgres.PoolModule,
-	postgres.OrderRepositoryModule,
-	usecase.Module,
-	httpadapter.Module,
 	observability.Module,
+	httpadapter.Module,
+	usecase.Module,
+	postgres.Module,
+
 	fx.Provide(
 		NewLoggerConfig,
-		NewHTTPServer,
+
+		fx.Annotate(postgres.NewOrderStore, fx.As(new(usecase.OrderStore))),
+		fx.Annotate(usecase.NewOrderUsecase, fx.As(new(httpadapter.OrderUsecase))),
 	),
 
-	fx.Invoke(func(*http.Server) {}),
+	fx.Invoke(NewHTTPServer),
 )
 
 func NewLoggerConfig() observability.LoggerConfig {

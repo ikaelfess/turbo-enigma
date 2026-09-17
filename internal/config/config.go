@@ -16,14 +16,14 @@ type Config struct {
 	DBMaxConnLifetime time.Duration `env:"DB_MAX_CONN_LIFETIME" env-default:"30m"`
 
 	// api server settings
-	ServerAddress     string        `env:"SERVER_ADDRESS" env-default:"localhost:3000"`
-	ShutdownTimeout   time.Duration `env:"SHUTDOWN_TIMEOUT" env-default:"20s"`
-	ReadTimeout       time.Duration `env:"READ_TIMEOUT" env-default:"5s"`
-	WriteTimeout      time.Duration `env:"WRITE_TIMEOUT" env-default:"10s"`
-	IdleTimeout       time.Duration `env:"IDLE_TIMEOUT" env-default:"30s"`
+	ServerAddress   string        `env:"SERVER_ADDRESS" env-default:"localhost:3000"`
+	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" env-default:"20s"`
+	ReadTimeout     time.Duration `env:"READ_TIMEOUT" env-default:"5s"`
+	WriteTimeout    time.Duration `env:"WRITE_TIMEOUT" env-default:"10s"`
+	IdleTimeout     time.Duration `env:"IDLE_TIMEOUT" env-default:"30s"`
 
 	// outbox-event-publisher worker settings
-	WorkersNum        int           `env:"WORKERS_NUM" env-default:"5"`
+	WorkersNum int `env:"WORKERS_NUM" env-default:"5"`
 }
 
 func NewConfig() (Config, error) {

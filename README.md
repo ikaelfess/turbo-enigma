@@ -8,7 +8,7 @@ Hexagonal layout with Uber Fx for wiring:
 
 | Layer | Path | Role |
 | --- | --- | --- |
-| Entry points | `cmd/api`, `cmd/outbox-publisher`, `cmd/event-worker` | Process mains |
+| Entry points | `cmd/api`, `cmd/outbox-event-publisher`, `cmd/outbox-event-consumer` | Process mains |
 | Domain | `internal/domain` | Order validation, outbox event types |
 | Use case | `internal/usecase` | Create-order orchestration |
 | HTTP adapter | `internal/adapters/http` | Routes, JSON, middleware |
@@ -20,6 +20,7 @@ Hexagonal layout with Uber Fx for wiring:
 - [mise](https://mise.jdx.dev/) for Go, golangci-lint, lefthook, and goose
 - [Go](https://go.dev/) 1.27 (see `go.mod` / `mise.toml`)
 - [Docker Compose](https://docs.docker.com/compose/) for local Postgres and the API
+- [lefthook](https://github.com/evilmartians/lefthook) runs `gofmt`, golangci-lint, `go build ./...`, and `go test -v ./...` on pre-commit.
 
 ## Getting started
 
@@ -55,16 +56,6 @@ Successful response (`201`):
 
 ```json
 {"id":"<uuid>","total_cents":900}
-```
-
-Validation failures return `422` with a plain-text error (`order must contain at least one item`, `item name must not be empty`, `quantity must be greater than zero`, `unit price must not be negative`). Invalid JSON returns `400`.
-
-Run the API against an existing database without Compose:
-
-```bash
-export DATABASE_URL='postgres://postgres:postgres@localhost:5432/transactional_outbox_development?sslmode=disable'
-export SERVER_ADDRESS='localhost:3000'
-go run ./cmd/api
 ```
 
 ## HTTP API
@@ -103,25 +94,6 @@ export GOOSE_TABLE=goose_migrations
 go tool goose up
 ```
 
-## Configuration
-
-Loaded from the environment with [cleanenv](https://github.com/ilyakaznacheev/cleanenv). One `Config` struct is shared; each process reads the fields it needs.
-
-| Variable | Description | Default |
-| --- | --- | --- |
-| `DATABASE_URL` | Postgres URL | required |
-| `SERVER_ADDRESS` | HTTP bind address | `localhost:3000` |
-| `DB_MAX_CONNS` | Pool max | `5` |
-| `DB_MIN_CONNS` | Pool min | `1` |
-| `DB_MAX_CONN_LIFETIME` | Pool lifetime | `1m` |
-| `READ_TIMEOUT` | HTTP read timeout | `5s` |
-| `WRITE_TIMEOUT` | HTTP write timeout | `10s` |
-| `IDLE_TIMEOUT` | HTTP idle timeout | `30s` |
-| `SHUTDOWN_TIMEOUT` | Graceful shutdown | `20s` |
-| `LOG_LEVEL` | Log level | `debug` |
-
-Compose also uses `POSTGRES_*` for the database container and `GOOSE_*` for migrations. See `.env.example`.
-
 ## Tests
 
 Integration tests start Postgres with Testcontainers, clone a templated database per case, and hit a real HTTP server.
@@ -129,16 +101,3 @@ Integration tests start Postgres with Testcontainers, clone a templated database
 ```bash
 make test
 ```
-
-`TestNewOrder` checks HTTP status, persisted order/items, and an unpublished `order.created` outbox row.
-
-## Development
-
-```bash
-make tools
-make hooks
-make lint
-make build
-```
-
-[lefthook](https://github.com/evilmartians/lefthook) runs `gofmt`, golangci-lint, `go build ./...`, and `go test -v ./...` on pre-commit.

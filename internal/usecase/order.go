@@ -2,23 +2,27 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/ikaelfess/transactional-outbox/internal/adapters/postgres"
 	"github.com/ikaelfess/transactional-outbox/internal/domain"
 )
 
-type OrderRepository interface {
-	Create(ctx context.Context, order *domain.Order) error
+var _ OrderStore = (*postgres.OrderStore)(nil)
+
+type OrderStore interface {
+	Create(ctx context.Context, order domain.Order, items []domain.OrderItem) (domain.Order, error)
 }
 
-type OrderService struct {
-	orders OrderRepository
+type OrderUsecase struct {
+	orders OrderStore
 }
 
-func NewOrderService(orders OrderRepository) *OrderService {
-	return &OrderService{orders: orders}
+func NewOrderUsecase(orders OrderStore) *OrderUsecase {
+	return &OrderUsecase{orders: orders}
 }
 
-func (s *OrderService) CreateOrder(
+func (s *OrderUsecase) CreateOrder(
 	ctx context.Context,
 	items []domain.OrderItem,
 ) (domain.Order, error) {
@@ -27,8 +31,9 @@ func (s *OrderService) CreateOrder(
 		return domain.Order{}, err
 	}
 
-	if err := s.orders.Create(ctx, &order); err != nil {
-		return domain.Order{}, err
+	order, err = s.orders.Create(ctx, order, items)
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("%w: %w", domain.ErrOrderNotSaved, err)
 	}
 
 	return order, nil

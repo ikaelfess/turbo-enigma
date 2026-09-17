@@ -11,6 +11,7 @@ var (
 	ErrInvalidItemName  = errors.New("item name must not be empty")
 	ErrInvalidQuantity  = errors.New("quantity must be greater than zero")
 	ErrInvalidUnitPrice = errors.New("unit price must not be negative")
+	ErrOrderNotSaved    = errors.New("failed to save order")
 )
 
 type Order struct {
@@ -21,6 +22,7 @@ type Order struct {
 
 type OrderItem struct {
 	ID             uuid.UUID
+	OrderID        uuid.UUID
 	ItemName       string
 	Quantity       int
 	UnitPriceCents int64

@@ -9,7 +9,7 @@ pre-commit:
     # 2. Fast static analysis/linting
     golangci-lint:
       glob: "*.go"
-      run: golangci-lint run {staged_files}
+      run: golangci-lint run ./...
 
     # 3. Ensure the project builds cleanly
     go-build:

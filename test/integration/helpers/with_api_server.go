@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+	"github.com/uptrace/bun"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 
@@ -17,7 +17,7 @@ import (
 
 func WithApiServer(
 	t *testing.T,
-	db *pgxpool.Pool,
+	db *bun.DB,
 	fn func(t *testing.T, apiServerUrl string),
 ) {
 	var handler http.Handler
@@ -25,13 +25,15 @@ func WithApiServer(
 		t,
 		fx.NopLogger,
 
-		postgres.OrderRepositoryModule,
+		postgres.StoreModule,
 		usecase.Module,
 		httpadapter.Module,
 
 		fx.Provide(
 			func() zerolog.Logger { return zerolog.Nop() },
-			func() *pgxpool.Pool { return db },
+			func() *bun.DB { return db },
+			fx.Annotate(postgres.NewOrderStore, fx.As(new(usecase.OrderStore))),
+			fx.Annotate(usecase.NewOrderUsecase, fx.As(new(httpadapter.OrderUsecase))),
 		),
 
 		fx.Populate(&handler),

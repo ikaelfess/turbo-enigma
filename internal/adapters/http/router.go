@@ -4,11 +4,11 @@ import (
 	"net/http"
 )
 
-func NewRouter(handler *Handler) *http.ServeMux {
+func NewRouter(orderHandler *OrderHandler) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", health)
-	mux.HandleFunc("POST /orders", handler.CreateOrder)
+	mux.HandleFunc("POST /orders", orderHandler.CreateOrder)
 
 	return mux
 }

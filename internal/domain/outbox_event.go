@@ -12,10 +12,17 @@ const (
 	OrderCreatedEventType OutboxEventType = "order.created"
 )
 
+type OutboxEventItem struct {
+	ID             uuid.UUID `json:"id"`
+	ItemName       string    `json:"item_name"`
+	Quantity       int       `json:"quantity"`
+	UnitPriceCents int64     `json:"unit_price_cents"`
+}
+
 type OutboxEventPayload struct {
-	ID         uuid.UUID   `json:"id"`
-	TotalCents int64       `json:"total_cents"`
-	Items      []OrderItem `json:"items"`
+	ID         uuid.UUID         `json:"id"`
+	TotalCents int64             `json:"total_cents"`
+	Items      []OutboxEventItem `json:"items"`
 }
 
 type OutboxEvent struct {

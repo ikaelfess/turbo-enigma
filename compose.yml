@@ -54,13 +54,13 @@ services:
       retries: 5
       start_period: 2s
 
-  outbox_publisher:
+  outbox_event_publisher:
     <<: *go-service
-    command: ["go", "run", "./cmd/outbox-publisher"]
+    command: ["go", "run", "./cmd/outbox-event-publisher"]
 
-  event_worker:
-    <<: *go-service
-    command: ["go", "run", "./cmd/event-worker"]
+  # outbox_event_consumer:
+  #   <<: *go-service
+  #   command: ["go", "run", "./cmd/outbox-event-consumer"]
 
   postgres_migrations:
     <<: *go-service

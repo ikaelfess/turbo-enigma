@@ -1,10 +1,12 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/ikaelfess/transactional-outbox/internal/domain"
+	"github.com/ikaelfess/transactional-outbox/internal/usecase"
 )
 
 type CreateOrderRequest struct {
@@ -22,7 +24,21 @@ type CreateOrderResponse struct {
 	TotalCents int64  `json:"total_cents"`
 }
 
-func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+var _ OrderUsecase = (*usecase.OrderUsecase)(nil)
+
+type OrderUsecase interface {
+	CreateOrder(ctx context.Context, items []domain.OrderItem) (domain.Order, error)
+}
+
+type OrderHandler struct {
+	usecase OrderUsecase
+}
+
+func NewOrderHandler(usecase OrderUsecase) *OrderHandler {
+	return &OrderHandler{usecase: usecase}
+}
+
+func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	var req CreateOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -38,7 +54,7 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	order, err := h.orderService.CreateOrder(r.Context(), items)
+	order, err := h.usecase.CreateOrder(r.Context(), items)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return

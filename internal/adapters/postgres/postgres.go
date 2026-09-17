@@ -2,111 +2,48 @@ package postgres
 
 import (
 	"context"
-	"fmt"
-	"strings"
+	"database/sql"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
+	"github.com/uptrace/bun/extra/bundebug"
+	"github.com/uptrace/bun/extra/bunzerolog"
 	"go.uber.org/fx"
 
 	"github.com/ikaelfess/transactional-outbox/internal/config"
 )
 
-type Config struct {
-	URL             string
-	MaxConns        int
-	MinConns        int
-	MaxConnLifetime time.Duration
-}
+const (
+	SlowQueryThreshold = 2 * time.Second
+)
 
-func NewPool(
-	lifecycle fx.Lifecycle,
-	config config.Config,
-	logger zerolog.Logger,
-) (*pgxpool.Pool, error) {
-	poolConfig, err := pgxpool.ParseConfig(config.DatabaseUrl)
-	if err != nil {
-		return nil, fmt.Errorf("postgres config: %w", err)
-	}
+func NewDatabase(lc fx.Lifecycle, c config.Config, logger zerolog.Logger) *bun.DB {
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(c.DatabaseUrl)))
+	sqldb.SetMaxOpenConns(c.DBMaxConns)
+	sqldb.SetConnMaxLifetime(c.DBMaxConnLifetime)
 
-	poolConfig.ConnConfig.Tracer = &queryTracer{logger: logger}
-	poolConfig.MaxConns = int32(config.DBMaxConns)
-	poolConfig.MinConns = int32(config.DBMinConns)
-	poolConfig.MaxConnLifetime = config.DBMaxConnLifetime
+	loggerHook := bunzerolog.NewQueryHook(
+		bunzerolog.WithLogger(&logger),
+		bunzerolog.WithQueryLogLevel(zerolog.DebugLevel),
+		bunzerolog.WithSlowQueryLogLevel(zerolog.WarnLevel),
+		bunzerolog.WithErrorQueryLogLevel(zerolog.ErrorLevel),
+		bunzerolog.WithSlowQueryThreshold(SlowQueryThreshold),
+	)
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
-	if err != nil {
-		return nil, fmt.Errorf("create postgres pool: %w", err)
-	}
+	db := bun.
+		NewDB(sqldb, pgdialect.New()).
+		WithQueryHook(loggerHook).
+		WithQueryHook(bundebug.NewQueryHook(bundebug.WithVerbose(true)))
 
-	if err := pool.Ping(context.Background()); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("ping postgres: %w", err)
-	}
-
-	lifecycle.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			pool.Close()
-			return nil
+	lc.Append(fx.Hook{
+		OnStart: db.PingContext,
+		OnStop: func(_ context.Context) error {
+			return db.Close()
 		},
 	})
 
-	return pool, nil
-}
-
-type queryTracer struct {
-	logger zerolog.Logger
-}
-
-var _ pgx.QueryTracer = (*queryTracer)(nil)
-
-type queryTraceData struct {
-	start time.Time
-	sql   string
-	args  []any
-}
-
-type queryTraceKey struct{}
-
-func (t *queryTracer) TraceQueryStart(
-	ctx context.Context,
-	conn *pgx.Conn,
-	data pgx.TraceQueryStartData,
-) context.Context {
-	return context.WithValue(
-		ctx,
-		queryTraceKey{},
-		queryTraceData{
-			start: time.Now(),
-			sql:   data.SQL,
-			args:  data.Args,
-		},
-	)
-}
-
-func (t *queryTracer) TraceQueryEnd(
-	ctx context.Context,
-	conn *pgx.Conn,
-	data pgx.TraceQueryEndData,
-) {
-	traceData, ok := ctx.Value(queryTraceKey{}).(queryTraceData)
-	if !ok {
-		return
-	}
-
-	sql := strings.Join(strings.Fields(traceData.sql), " ")
-	event := t.logger.Debug().
-		Str("sql", sql).
-		Dur("duration_ms", time.Since(traceData.start))
-
-	if data.Err != nil {
-		event = t.logger.Error().
-			Str("sql", sql).
-			Dur("duration_ms", time.Since(traceData.start)).
-			Err(data.Err)
-	}
-
-	event.Msg("postgres query")
+	return db
 }
