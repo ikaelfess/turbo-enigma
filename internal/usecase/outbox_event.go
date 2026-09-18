@@ -6,16 +6,16 @@ import (
 	"github.com/ikaelfess/transactional-outbox/internal/domain"
 )
 
-type OutboxEventRepository interface {
+type OutboxEventRepo interface {
 	FindUnpublishedBatch(ctx context.Context, limit int) ([]domain.OutboxEvent, error)
 	MarkPublished(ctx context.Context, ids []int64) error
 }
 
 type OutboxEventUsecase struct {
-	outboxEvents OutboxEventRepository
+	outboxEvents OutboxEventRepo
 }
 
-func NewOutboxEventUsecase(outboxEvents OutboxEventRepository) *OutboxEventUsecase {
+func NewOutboxEventUsecase(outboxEvents OutboxEventRepo) *OutboxEventUsecase {
 	return &OutboxEventUsecase{
 		outboxEvents: outboxEvents,
 	}

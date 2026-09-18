@@ -59,7 +59,7 @@ func (s *OrderStore) Create(
 
 		_, err = outboxEventRepo.Create(ctx, outboxEvent)
 		if err != nil {
-			return nil
+			return err
 		}
 
 		return nil
