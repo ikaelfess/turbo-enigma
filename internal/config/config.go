@@ -15,6 +15,8 @@ type Config struct {
 	DBMinConns        int           `env:"DB_MIN_CONNS" env-default:"5"`
 	DBMaxConnLifetime time.Duration `env:"DB_MAX_CONN_LIFETIME" env-default:"30m"`
 
+	UptraceDSN string `env:"UPTRACE_DSN" env-required:"true"`
+
 	// api server settings
 	ServerAddress   string        `env:"SERVER_ADDRESS" env-default:"localhost:3000"`
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" env-default:"20s"`

@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type requestIdKey struct{}
@@ -16,7 +18,7 @@ func requestIdFromContext(ctx context.Context) string {
 	return requestId
 }
 
-func RequestId() func(http.Handler) http.Handler {
+func RequestID() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestId := r.Header.Get("X-Request-ID")
@@ -94,6 +96,13 @@ func Logger(logger zerolog.Logger) func(http.Handler) http.Handler {
 				Str("path", r.URL.Path).
 				Logger()
 
+			if sc := trace.SpanFromContext(r.Context()).SpanContext(); sc.IsValid() {
+				requestLogger = requestLogger.With().
+					Str("trace_id", sc.TraceID().String()).
+					Str("span_id", sc.SpanID().String()).
+					Logger()
+			}
+
 			ctx := requestLogger.WithContext(r.Context())
 			r = r.WithContext(ctx)
 
@@ -111,4 +120,12 @@ func Logger(logger zerolog.Logger) func(http.Handler) http.Handler {
 				Msg("http request")
 		})
 	}
+}
+
+func Telemetry() func(http.Handler) http.Handler {
+	return otelhttp.NewMiddleware("api",
+		otelhttp.WithFilter(func(r *http.Request) bool {
+			return r.URL.Path != "/health"
+		}),
+	)
 }

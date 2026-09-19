@@ -26,6 +26,7 @@ var ApiModule = fx.Module(
 
 	fx.Provide(
 		NewLoggerConfig,
+		observability.NewTelemetry,
 
 		fx.Annotate(postgres.NewOrderStore, fx.As(new(usecase.OrderStore))),
 		fx.Annotate(usecase.NewOrderUsecase, fx.As(new(httpadapter.OrderUsecase))),
