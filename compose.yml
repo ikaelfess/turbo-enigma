@@ -1,6 +1,7 @@
 x-go-service-env: &go-service-env
   - SERVER_ADDRESS
   - DATABASE_URL
+  - UPTRACE_DSN
 
 x-postgres-migrations-env: &postgres-migrations-env
   - GOOSE_DRIVER
@@ -27,7 +28,7 @@ x-go-service: &go-service
       condition: service_completed_successfully
   environment: *go-service-env
   volumes:
-  - .:/app
+    - .:/app
 
 x-postgres-service: &postgres-service
   <<: *base-service
@@ -47,6 +48,13 @@ services:
     command: ["go", "run", "./cmd/api"]
     ports:
       - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres_migrations:
+        condition: service_completed_successfully
+      uptrace:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
       interval: 10s
@@ -77,8 +85,90 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
 
+  clickhouse:
+    <<: *base-service
+    image: clickhouse/clickhouse-server:26.3
+    restart: on-failure
+    environment:
+      CLICKHOUSE_USER: uptrace
+      CLICKHOUSE_PASSWORD: uptrace
+      CLICKHOUSE_DB: uptrace
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'localhost:8123/ping']
+      interval: 1s
+      timeout: 1s
+      retries: 30
+    volumes:
+      - ch_data:/var/lib/clickhouse
+
+  uptrace_postgres:
+    <<: *base-service
+    image: postgres:17-alpine
+    restart: on-failure
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: uptrace
+      POSTGRES_PASSWORD: uptrace
+      POSTGRES_DB: uptrace
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U uptrace -d uptrace']
+      interval: 1s
+      timeout: 1s
+      retries: 30
+    volumes:
+      - uptrace_pg_data:/var/lib/postgresql/data/pgdata
+
+  redis:
+    <<: *base-service
+    image: redis:6.2.2-alpine
+    restart: on-failure
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 1s
+      timeout: 1s
+      retries: 30
+
+  uptrace:
+    <<: *base-service
+    image: 'uptrace/uptrace:2.1.0-beta.5'
+    restart: on-failure
+    volumes:
+      - ./infra/uptrace/uptrace.yml:/etc/uptrace/config.yml
+    ports:
+      - '14317:4317'
+      - '14318:80'
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://127.0.0.1:80']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      uptrace_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  otelcol:
+    <<: *base-service
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    restart: on-failure
+    volumes:
+      - ./infra/uptrace/otel-collector.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - '4317:4317'
+      - '4318:4318'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - uptrace
+
 volumes:
   postgres_data:
+  ch_data:
+  uptrace_pg_data:
 
 networks:
   default:

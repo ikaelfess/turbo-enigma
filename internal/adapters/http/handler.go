@@ -10,7 +10,8 @@ import (
 func NewHTTPHandler(logger zerolog.Logger, router *http.ServeMux) http.Handler {
 	return alice.New(
 		Recover(),
-		RequestId(),
+		Telemetry(),
+		RequestID(),
 		Logger(logger),
 	).Then(router)
 }
