@@ -14,7 +14,8 @@ Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/age
 
 ### Conventional commits
 
-Agents must use [Conventional Commits](https://www.conventionalcommits.org/) for every git commit: `<type>(optional-scope): <description>` (imperative, lowercase, no trailing period). Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `build`, `ci`, `perf`, `style`. Breaking changes use `!` after the type/scope or a `BREAKING CHANGE:` footer. Author is the repo's configured user only: no `Co-authored-by` trailers, no agent name in the message.
+Agents must use [Conventional Commits](https://www.conventionalcommits.org/) for every git commit: `<type>(optional-scope): <description>` (imperative, lowercase, no trailing period). Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `build`, `ci`, `perf`, `style`. Breaking changes use `!` after the type/scope or a `BREAKING CHANGE:` footer.
+Author is the repo's configured user only: no `Co-authored-by` trailers inside commits or `Made with Cursor` inside PR description, no agent name in the message.
 
 ### Ticket implementation
 
