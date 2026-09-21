@@ -52,15 +52,15 @@ Before a PR exists:
 
 1. Relevant tests pass (full suite when the change can affect it).
 2. `/code-review` against `main`; fix findings.
-3. Lefthook `pre-commit` is green (`gofmt`, `golangci-lint`, `go build ./...`, `go test ./...`). Commit with Conventional Commits; fix hook failures and commit again until the hook passes.
+3. Lefthook `pre-commit` applies `golangci-lint fmt` on staged `*.go`. Run `make lint` and `make test` locally. Commit with Conventional Commits; fix format-hook or lint/test failures and commit again until they pass.
 
-Done when HEAD includes the work, the hook succeeded on the last commit, and review findings are fixed.
+Done when HEAD includes the work, the format hook succeeded on the last commit, local lint and tests passed, and review findings are fixed. GitHub Actions job `ci` is the merge-quality gate.
 
 ### 6. PR
 
 Push `-u` and open a ready PR into `main` (not a draft at start). Title is a Conventional Commit. Body includes `Closes #<ticket>`. Add `Part of #<spec>` only when a spec exists. Ticket PRs close the ticket, never the spec.
 
-You merge. The agent never merges.
+You merge when GitHub Actions job `ci` is green. The agent never merges.
 
 Done when `gh pr view` shows an open, non-draft PR targeting `main`.
 
@@ -72,7 +72,7 @@ Done when the working tree is on `main`.
 
 ### 8. CI or review comments
 
-Check out the existing `ticket/<n>-<slug>` branch. Same claim, same branch. Fix, push, re-run gates. Still no merge.
+Check out the existing `ticket/<n>-<slug>` branch. Same claim, same branch. Fix, push, re-run gates. Still no merge. GitHub Actions job `ci` must be green (`golangci-lint fmt --diff`, `golangci-lint run`, `go build ./...`, `go test ./...`).
 
 Done when the new commits are on the PR and gates pass.
 

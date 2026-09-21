@@ -1,20 +1,5 @@
 pre-commit:
-  parallel: true
   commands:
-    # 1. Format code automatically
-    gofmt:
+    golangci-lint-fmt:
       glob: "*.go"
-      run: gofmt -w {staged_files} && git add {staged_files}
-
-    # 2. Fast static analysis/linting
-    golangci-lint:
-      glob: "*.go"
-      run: golangci-lint run ./...
-
-    # 3. Ensure the project builds cleanly
-    go-build:
-      run: go build ./...
-
-    # 4. Run tests
-    go-test:
-      run: go test -v ./...
+      run: golangci-lint fmt {staged_files} && git add {staged_files}

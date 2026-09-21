@@ -20,7 +20,8 @@ Hexagonal layout with Uber Fx for wiring:
 - [mise](https://mise.jdx.dev/) for Go, golangci-lint, lefthook, and goose
 - [Go](https://go.dev/) 1.27 (see `go.mod` / `mise.toml`)
 - [Docker Compose](https://docs.docker.com/compose/) for local Postgres, Kafka, and the API
-- [lefthook](https://github.com/evilmartians/lefthook) runs `gofmt`, golangci-lint, `go build ./...`, and `go test -v ./...` on pre-commit.
+- [lefthook](https://github.com/evilmartians/lefthook) applies `golangci-lint fmt` (goimports) on staged `*.go` at pre-commit
+- GitHub Actions job `ci` on pull requests and pushes to `main` is the merge-quality gate: `golangci-lint fmt --diff`, `golangci-lint run`, `go build ./...`, and `go test ./...`
 
 ## Getting started
 
