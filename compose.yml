@@ -5,6 +5,8 @@ x-go-service-env: &go-service-env
   - KAFKA_BROKERS
   - KAFKA_TOPIC
   - KAFKA_CONSUMER_GROUP
+  - OUTBOX_BATCH_SIZE
+  - OUTBOX_CLAIM_TTL
 
 x-postgres-migrations-env: &postgres-migrations-env
   - GOOSE_DRIVER

@@ -22,7 +22,7 @@ up: env ## Run the API (Postgres + migrations as dependencies)
 up-d: env ## Run the API in the background
 	$(COMPOSE) up --build -d api
 
-up-all: env ## Run every Compose service, including publisher and worker stubs
+up-all: env ## Run every Compose service, including the outbox publisher
 	$(COMPOSE) up --build
 
 down: ## Stop Compose services

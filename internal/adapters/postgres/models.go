@@ -65,12 +65,13 @@ func (i *OrderItem) ToDomain() *domain.OrderItem {
 type OutboxEvent struct {
 	bun.BaseModel `bun:"table:outbox_events"`
 
-	ID          uuid.UUID       `bun:"id,pk,type:uuid,default:uuidv7()"`
-	AggregateID uuid.UUID       `bun:"aggregate_id,type:uuid,notnull"`
-	EventType   string          `bun:"event_type,notnull"`
-	Payload     json.RawMessage `bun:"payload,type:jsonb,notnull"`
-	CreatedAt   time.Time       `bun:"created_at,notnull,default:now()"`
-	PublishedAt *time.Time      `bun:"published_at"`
+	ID           uuid.UUID       `bun:"id,pk,type:uuid,default:uuidv7()"`
+	AggregateID  uuid.UUID       `bun:"aggregate_id,type:uuid,notnull"`
+	EventType    string          `bun:"event_type,notnull"`
+	Payload      json.RawMessage `bun:"payload,type:jsonb,notnull"`
+	CreatedAt    time.Time       `bun:"created_at,notnull,default:now()"`
+	PublishedAt  *time.Time      `bun:"published_at"`
+	ClaimedUntil *time.Time      `bun:"claimed_until"`
 }
 
 func NewOutboxEvent(outboxEvent *domain.OutboxEvent) *OutboxEvent {

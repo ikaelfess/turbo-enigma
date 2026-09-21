@@ -1,4 +1,4 @@
-package riveradapter
+package river
 
 import (
 	"context"
