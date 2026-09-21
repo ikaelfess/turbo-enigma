@@ -26,6 +26,11 @@ type Config struct {
 
 	// outbox-event-publisher worker settings
 	WorkersNum int `env:"WORKERS_NUM" env-default:"5"`
+
+	// kafka settings, shared by the outbox event publisher and consumer
+	KafkaBrokers       []string `env:"KAFKA_BROKERS" env-default:"kafka:9092"`
+	KafkaTopic         string   `env:"KAFKA_TOPIC" env-default:"order.created"`
+	KafkaConsumerGroup string   `env:"KAFKA_CONSUMER_GROUP" env-default:"outbox-event-consumer"`
 }
 
 func NewConfig() (Config, error) {

@@ -19,7 +19,7 @@ Hexagonal layout with Uber Fx for wiring:
 
 - [mise](https://mise.jdx.dev/) for Go, golangci-lint, lefthook, and goose
 - [Go](https://go.dev/) 1.27 (see `go.mod` / `mise.toml`)
-- [Docker Compose](https://docs.docker.com/compose/) for local Postgres and the API
+- [Docker Compose](https://docs.docker.com/compose/) for local Postgres, Kafka, and the API
 - [lefthook](https://github.com/evilmartians/lefthook) runs `gofmt`, golangci-lint, `go build ./...`, and `go test -v ./...` on pre-commit.
 
 ## Getting started
@@ -31,7 +31,7 @@ make tools
 make up
 ```
 
-`make up` creates `.env` from `.env.example` when it is missing, then runs the API (Postgres and migrations start as dependencies). Other targets: `make help`, `make up-d`, `make up-all`, `make down`, `make logs`, `make migrate`, `make hooks`.
+`make up` creates `.env` from `.env.example` when it is missing, then runs the API (Postgres and migrations start as dependencies). It starts no Kafka containers, because the API does not talk to a broker; use `make up-all` for those. Other targets: `make help`, `make up-d`, `make up-all`, `make down`, `make logs`, `make migrate`, `make hooks`.
 
 The API listens on `http://localhost:3000`. Health:
 
@@ -92,6 +92,33 @@ export GOOSE_DBSTRING='postgres://postgres:postgres@localhost:5432/transactional
 export GOOSE_MIGRATION_DIR=./migrations
 export GOOSE_TABLE=goose_migrations
 go tool goose up
+```
+
+## Messaging
+
+`make up-all` starts a single-node Kafka broker in KRaft mode plus a UI. The publisher and consumer do not produce or consume yet; this is the infrastructure and configuration they will read.
+
+| Service | Image | Role |
+| --- | --- | --- |
+| `kafka` | `apache/kafka:4.3.1` | Broker and controller in one node, reachable only inside the Compose network at `kafka:9092` |
+| `kafka_topics` | `apache/kafka:4.3.1` | One-shot `kafka-topics.sh --create --if-not-exists`, 3 partitions, replication factor 1 |
+| `kafka_ui` | `kafbat/kafka-ui:v1.5.0` | Browser UI on [localhost:8080](http://localhost:8080), single cluster `local` defined in `compose.yml` |
+
+No Kafka port is published to the host, so a binary run outside Compose cannot reach the broker; only the UI's HTTP port is exposed. Topic auto-creation is disabled, so an unknown topic name fails instead of silently creating a single-partition topic. The broker's log directory is kept in the `kafka_data` volume, so consumer group offsets survive a restart.
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `KAFKA_BROKERS` | `kafka:9092` | Comma-separated bootstrap servers |
+| `KAFKA_TOPIC` | `order.created` | Topic for outbox events; also drives `kafka_topics` |
+| `KAFKA_CONSUMER_GROUP` | `outbox-event-consumer` | Consumer group id |
+
+All three have defaults rather than being required, so the API, which shares one `Config` struct, still boots without a broker. `.env.example` lists them commented out: uncomment one only to override it, because `cleanenv` treats an empty value as a value and not as a missing one.
+
+Inspect the topic without the UI:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 --describe --topic order.created
 ```
 
 ## Tests
