@@ -11,24 +11,27 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type requestIdKey struct{}
+type requestIDKey struct{}
 
-func requestIdFromContext(ctx context.Context) string {
-	requestId, _ := ctx.Value(requestIdKey{}).(string)
+func requestIDFromContext(ctx context.Context) string {
+	requestId, _ := ctx.Value(requestIDKey{}).(string)
 	return requestId
+}
+
+func contextWithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, requestID)
 }
 
 func RequestID() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestId := r.Header.Get("X-Request-ID")
-
 			if requestId == "" {
 				requestId = uuid.NewString()
 			}
 
 			w.Header().Set("X-Request-ID", requestId)
-			ctx := context.WithValue(r.Context(), requestIdKey{}, requestId)
+			ctx := contextWithRequestID(r.Context(), requestId)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -91,7 +94,7 @@ func Logger(logger zerolog.Logger) func(http.Handler) http.Handler {
 			start := time.Now()
 
 			requestLogger := logger.With().
-				Str("request_id", requestIdFromContext(r.Context())).
+				Str("request_id", requestIDFromContext(r.Context())).
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Logger()
