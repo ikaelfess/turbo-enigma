@@ -25,7 +25,9 @@ type Config struct {
 	IdleTimeout     time.Duration `env:"IDLE_TIMEOUT" env-default:"30s"`
 
 	// outbox-event-publisher worker settings
-	WorkersNum int `env:"WORKERS_NUM" env-default:"5"`
+	WorkersNum      int           `env:"WORKERS_NUM" env-default:"5"`
+	OutboxBatchSize int           `env:"OUTBOX_BATCH_SIZE" env-default:"100"`
+	OutboxClaimTTL  time.Duration `env:"OUTBOX_CLAIM_TTL" env-default:"2m"`
 
 	// kafka settings, shared by the outbox event publisher and consumer
 	KafkaBrokers       []string `env:"KAFKA_BROKERS" env-default:"kafka:9092"`

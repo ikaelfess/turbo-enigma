@@ -10,9 +10,11 @@ Hexagonal layout with Uber Fx for wiring:
 | --- | --- | --- |
 | Entry points | `cmd/api`, `cmd/outbox-event-publisher`, `cmd/outbox-event-consumer` | Process mains |
 | Domain | `internal/domain` | Order validation, outbox event types |
-| Use case | `internal/usecase` | Create-order orchestration |
+| Use case | `internal/usecase` | Create-order and outbox publish orchestration |
 | HTTP adapter | `internal/adapters/http` | Routes, JSON, middleware |
-| Postgres adapter | `internal/adapters/postgres` | Transactional writes |
+| Postgres adapter | `internal/adapters/postgres` | Transactional writes and outbox claim |
+| Kafka adapter | `internal/adapters/kafka` | Sync produce of outbox events |
+| River adapter | `internal/adapters/river` | Periodic publish jobs |
 | Config / logs | `internal/config`, `internal/observability` | Env config, zerolog |
 
 ## Prerequisites
@@ -83,7 +85,9 @@ Goose migrations live in `migrations/`. Compose runs them via `go tool goose up`
 | --- | --- |
 | `orders` | Order header (`id` UUIDv7, `total_cents`) |
 | `order_items` | Line items keyed by `order_id` |
-| `outbox_events` | Event row: `aggregate_id`, `event_type`, JSON `payload`, `published_at` |
+| `outbox_events` | Event row: `aggregate_id`, `event_type`, JSON `payload`, `published_at`, `claimed_until` |
+
+The publisher claims unpublished rows via `claimed_until`. That column lives on the original `create_outbox_events` migration, so a database created before it must be recreated: `docker compose down -v` (named volumes survive `make down`).
 
 Local goose (same env as Compose):
 
@@ -97,7 +101,7 @@ go tool goose up
 
 ## Messaging
 
-`make up-all` starts a single-node Kafka broker in KRaft mode plus a UI. The publisher and consumer do not produce or consume yet; this is the infrastructure and configuration they will read.
+`make up-all` starts a single-node Kafka broker in KRaft mode plus a UI. The outbox event publisher claims unpublished rows and produces them to Kafka; the consumer is still a stub.
 
 | Service | Image | Role |
 | --- | --- | --- |
@@ -112,8 +116,10 @@ No Kafka port is published to the host, so a binary run outside Compose cannot r
 | `KAFKA_BROKERS` | `kafka:9092` | Comma-separated bootstrap servers |
 | `KAFKA_TOPIC` | `order.created` | Topic for outbox events; also drives `kafka_topics` |
 | `KAFKA_CONSUMER_GROUP` | `outbox-event-consumer` | Consumer group id |
+| `OUTBOX_BATCH_SIZE` | `100` | Unpublished events claimed per River job |
+| `OUTBOX_CLAIM_TTL` | `2m` | How long a claimed unpublished row stays exclusive |
 
-All three have defaults rather than being required, so the API, which shares one `Config` struct, still boots without a broker. `.env.example` lists them commented out: uncomment one only to override it, because `cleanenv` treats an empty value as a value and not as a missing one.
+These have defaults rather than being required, so the `api` service, which shares one `Config` struct, still boots without a broker. `.env.example` lists them commented out: uncomment one only to override it, because `cleanenv` treats an empty value as a value and not as a missing one.
 
 Inspect the topic without the UI:
 

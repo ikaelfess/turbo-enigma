@@ -5,7 +5,8 @@ CREATE TABLE outbox_events (
     event_type TEXT NOT NULL,
     payload JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    published_at TIMESTAMPTZ
+    published_at TIMESTAMPTZ,
+    claimed_until TIMESTAMPTZ
 );
 
 CREATE INDEX idx_outbox_events_unpublished

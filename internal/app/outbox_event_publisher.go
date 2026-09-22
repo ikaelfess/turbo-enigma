@@ -7,6 +7,7 @@ import (
 	"github.com/riverqueue/river"
 	"go.uber.org/fx"
 
+	kafkaadapter "github.com/ikaelfess/transactional-outbox/internal/adapters/kafka"
 	"github.com/ikaelfess/transactional-outbox/internal/adapters/postgres"
 	riveradapter "github.com/ikaelfess/transactional-outbox/internal/adapters/river"
 	"github.com/ikaelfess/transactional-outbox/internal/config"
@@ -22,9 +23,14 @@ var OutboxEventPublisherModule = fx.Module(
 	usecase.Module,
 	observability.Module,
 	riveradapter.Module,
+
 	fx.Provide(
 		LoggerConfig,
 		RegisterWorkers,
+
+		fx.Annotate(postgres.NewPublisherOutboxEventRepo, fx.As(new(usecase.OutboxEventRepo))),
+		fx.Annotate(kafkaadapter.NewProducer, fx.As(new(usecase.EventPublisher))),
+		fx.Annotate(newOutboxEventUsecase, fx.As(new(riveradapter.OutboxEventUsecase))),
 	),
 
 	fx.Invoke(StartRiverClient),
@@ -35,6 +41,14 @@ func LoggerConfig() observability.LoggerConfig {
 		ServiceName: "outbox-event-publisher",
 		Level:       "debug",
 	}
+}
+
+func newOutboxEventUsecase(
+	repo usecase.OutboxEventRepo,
+	publisher usecase.EventPublisher,
+	cfg config.Config,
+) *usecase.OutboxEventUsecase {
+	return usecase.NewOutboxEventUsecase(repo, publisher, cfg.OutboxBatchSize)
 }
 
 func RegisterWorkers(worker *riveradapter.OutboxEventPublisherWorker) *river.Workers {
