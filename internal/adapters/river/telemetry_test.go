@@ -33,11 +33,11 @@ func TestTelemetry_recordsSuccessfulJob(t *testing.T) {
 	spans := recorder.Ended()
 	require.Len(t, spans, 1)
 	span := spans[0]
-	require.Equal(t, "OutboxEventPublisherJob", span.Name())
+	require.Equal(t, "OutboxEventPublisherJobArgs", span.Name())
 	require.Equal(t, trace.SpanKindConsumer, span.SpanKind())
 	require.Equal(t, codes.Ok, span.Status().Code)
 	require.Equal(t, int64(42), attributeInt64(t, span, "river.job.id"))
-	require.Equal(t, "OutboxEventPublisherJob", attributeString(t, span, "river.job.kind"))
+	require.Equal(t, "OutboxEventPublisherJobArgs", attributeString(t, span, "river.job.kind"))
 	require.True(t, innerSpan.IsValid())
 	require.Equal(t, span.SpanContext().TraceID(), innerSpan.TraceID())
 	require.Equal(t, span.SpanContext().SpanID(), innerSpan.SpanID())
@@ -46,7 +46,7 @@ func TestTelemetry_recordsSuccessfulJob(t *testing.T) {
 	require.Equal(t, "info", entry["level"])
 	require.Equal(t, "river job", entry["message"])
 	require.EqualValues(t, 42, entry["job_id"])
-	require.Equal(t, "OutboxEventPublisherJob", entry["job_kind"])
+	require.Equal(t, "OutboxEventPublisherJobArgs", entry["job_kind"])
 	require.Equal(t, span.SpanContext().TraceID().String(), entry["trace_id"])
 	require.Equal(t, span.SpanContext().SpanID().String(), entry["span_id"])
 	require.IsType(t, float64(0), entry["duration_ms"])
@@ -101,7 +101,7 @@ func TestTelemetry_recordsPanicAndRepanics(t *testing.T) {
 	require.Equal(t, "panic recovered", entry["message"])
 	require.Equal(t, "boom", entry["error"])
 	require.EqualValues(t, 42, entry["job_id"])
-	require.Equal(t, "OutboxEventPublisherJob", entry["job_kind"])
+	require.Equal(t, "OutboxEventPublisherJobArgs", entry["job_kind"])
 	require.Equal(t, span.SpanContext().TraceID().String(), entry["trace_id"])
 	require.Equal(t, span.SpanContext().SpanID().String(), entry["span_id"])
 }
@@ -122,7 +122,7 @@ func newTelemetryTest(t *testing.T) (*Telemetry, *tracetest.SpanRecorder, *bytes
 }
 
 func publisherJob() *rivertype.JobRow {
-	return &rivertype.JobRow{ID: 42, Kind: "OutboxEventPublisherJob"}
+	return &rivertype.JobRow{ID: 42, Kind: OutboxEventPublisherJobArgs{}.Kind()}
 }
 
 func attributeInt64(t *testing.T, span sdktrace.ReadOnlySpan, key string) int64 {
