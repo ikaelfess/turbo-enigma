@@ -10,14 +10,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
+	"github.com/riverqueue/rivercontrib/otelriver"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/fx"
 
 	"github.com/ikaelfess/transactional-outbox/internal/config"
+	"github.com/ikaelfess/transactional-outbox/internal/observability"
 )
 
 func NewRiverClient(
 	lifecycle fx.Lifecycle,
 	cfg config.Config,
+	// otelriver captures the global tracer provider in its constructor.
+	_ *observability.Telemetry,
 	workers *river.Workers,
 	periodicJobs []*river.PeriodicJob,
 ) (*river.Client[pgx.Tx], error) {
@@ -43,7 +49,12 @@ func NewRiverClient(
 			},
 			Workers:      workers,
 			PeriodicJobs: periodicJobs,
-			Logger:       slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
+			Plugins: []rivertype.Plugin{
+				otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
+					TracerProvider: otel.GetTracerProvider(),
+				}),
+			},
+			Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		},
 	)
 	if err != nil {

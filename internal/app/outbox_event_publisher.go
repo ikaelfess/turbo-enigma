@@ -26,6 +26,7 @@ var OutboxEventPublisherModule = fx.Module(
 
 	fx.Provide(
 		LoggerConfig,
+		observability.NewTelemetry,
 		RegisterWorkers,
 
 		fx.Annotate(postgres.NewPublisherOutboxEventRepo, fx.As(new(usecase.OutboxEventRepo))),

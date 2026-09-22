@@ -79,6 +79,8 @@ services:
         condition: service_healthy
       kafka_topics:
         condition: service_completed_successfully
+      uptrace:
+        condition: service_healthy
 
   # Enable once cmd/outbox-event-consumer has an implementation. It will need
   # the same depends_on block as outbox_event_publisher, restated in full.
