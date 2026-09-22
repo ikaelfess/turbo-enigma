@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
+	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 
 	"github.com/ikaelfess/transactional-outbox/internal/config"
@@ -18,6 +20,7 @@ import (
 func NewRiverClient(
 	lifecycle fx.Lifecycle,
 	cfg config.Config,
+	logger zerolog.Logger,
 	workers *river.Workers,
 	periodicJobs []*river.PeriodicJob,
 ) (*river.Client[pgx.Tx], error) {
@@ -43,7 +46,10 @@ func NewRiverClient(
 			},
 			Workers:      workers,
 			PeriodicJobs: periodicJobs,
-			Logger:       slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
+			Middleware: []rivertype.Middleware{
+				NewTelemetry(logger),
+			},
+			Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		},
 	)
 	if err != nil {
