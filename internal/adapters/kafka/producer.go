@@ -20,23 +20,37 @@ type Producer struct {
 	topic  string
 }
 
-func NewProducer(lifecycle fx.Lifecycle, cfg config.Config) (*Producer, error) {
+// New returns a producer that writes to topic. The caller must Close it.
+func New(brokers []string, topic string) (*Producer, error) {
 	client, err := kgo.NewClient(
-		kgo.SeedBrokers(cfg.KafkaBrokers...),
+		kgo.SeedBrokers(brokers...),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
+		// The broker still decides. Compose leaves auto-creation off.
+		kgo.AllowAutoTopicCreation(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("kafka client: %w", err)
 	}
 
-	producer := &Producer{
+	return &Producer{
 		client: client,
-		topic:  cfg.KafkaTopic,
+		topic:  topic,
+	}, nil
+}
+
+func (p *Producer) Close() {
+	p.client.Close()
+}
+
+func NewProducer(lifecycle fx.Lifecycle, cfg config.Config) (*Producer, error) {
+	producer, err := New(cfg.KafkaBrokers, cfg.KafkaTopic)
+	if err != nil {
+		return nil, err
 	}
 
 	lifecycle.Append(fx.Hook{
 		OnStop: func(context.Context) error {
-			client.Close()
+			producer.Close()
 			return nil
 		},
 	})

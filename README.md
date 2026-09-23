@@ -105,8 +105,8 @@ go tool goose up
 
 | Service | Image | Role |
 | --- | --- | --- |
-| `kafka` | `apache/kafka:4.3.1` | Broker and controller in one node, reachable only inside the Compose network at `kafka:9092` |
-| `kafka_topics` | `apache/kafka:4.3.1` | One-shot `kafka-topics.sh --create --if-not-exists`, 3 partitions, replication factor 1 |
+| `kafka` | `confluentinc/confluent-local:8.3.2` | Broker and controller in one node, reachable only inside the Compose network at `kafka:9092` |
+| `kafka_topics` | `confluentinc/confluent-local:8.3.2` | One-shot `kafka-topics --create --if-not-exists`, 3 partitions, replication factor 1 |
 | `kafka_ui` | `kafbat/kafka-ui:v1.5.0` | Browser UI on [localhost:8080](http://localhost:8080), single cluster `local` defined in `compose.yml` |
 
 No Kafka port is published to the host, so a binary run outside Compose cannot reach the broker; only the UI's HTTP port is exposed. Topic auto-creation is disabled, so an unknown topic name fails instead of silently creating a single-partition topic. The broker's log directory is kept in the `kafka_data` volume, so consumer group offsets survive a restart.
@@ -124,7 +124,7 @@ These have defaults rather than being required, so the `api` service, which shar
 Inspect the topic without the UI:
 
 ```bash
-docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
+docker compose exec kafka kafka-topics \
   --bootstrap-server localhost:9092 --describe --topic order.created
 ```
 

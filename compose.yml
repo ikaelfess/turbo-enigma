@@ -104,31 +104,25 @@ services:
       - postgres_data:/var/lib/postgresql
 
   # Single-node KRaft broker, reachable only inside the Compose network.
+  # confluent-local already listens on PLAINTEXT_HOST :9092 and keeps
+  # inter-broker traffic on localhost:29092. Only the host-facing advert
+  # is overridden so other services use the Compose DNS name.
   kafka:
     <<: *base-service
-    image: apache/kafka:4.3.1
+    image: confluentinc/confluent-local:8.3.2
     environment:
       # Pinned so a rebuilt image cannot orphan the kafka_data volume.
       CLUSTER_ID: 0DPxTQhKQemkY6QPeHeaNw
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      # Image default is /tmp, which would not survive on the volume.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:29092,PLAINTEXT_HOST://kafka:9092
+      # Image default is /tmp/kraft-combined-logs, which the volume would not keep.
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       # Topics are created by kafka_topics, so a wrong topic name must fail.
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      # Internal topics default to 3 replicas, which one broker cannot satisfy.
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # Share-group internal topics default to 3 replicas, which one broker cannot satisfy.
       KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
     healthcheck:
-      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      test: ["CMD", "/usr/bin/kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 5s
       timeout: 10s
       retries: 20
@@ -136,12 +130,12 @@ services:
     volumes:
       - kafka_data:/var/lib/kafka/data
 
-  # One-shot topic creation. The image entrypoint reads arguments as env
-  # overrides, so the entrypoint is replaced rather than only the command.
+  # One-shot topic creation. /etc/confluent/docker/run exports arguments as
+  # environment variables, so the entrypoint is replaced rather than only the command.
   kafka_topics:
     <<: *base-service
-    image: apache/kafka:4.3.1
-    entrypoint: ["/opt/kafka/bin/kafka-topics.sh"]
+    image: confluentinc/confluent-local:8.3.2
+    entrypoint: ["/usr/bin/kafka-topics"]
     command:
       - --bootstrap-server
       - kafka:9092
