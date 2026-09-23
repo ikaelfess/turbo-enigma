@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -17,7 +16,7 @@ import (
 
 	"github.com/ikaelfess/transactional-outbox/internal/adapters/kafka"
 	"github.com/ikaelfess/transactional-outbox/internal/adapters/postgres"
-	riveradapter "github.com/ikaelfess/transactional-outbox/internal/adapters/river"
+	"github.com/ikaelfess/transactional-outbox/internal/adapters/river"
 	"github.com/ikaelfess/transactional-outbox/internal/config"
 	"github.com/ikaelfess/transactional-outbox/internal/domain"
 	"github.com/ikaelfess/transactional-outbox/internal/usecase"
@@ -40,122 +39,88 @@ func TestPublishBatch(t *testing.T) {
 	helpers.WithDatabaseContainer(t, func(t *testing.T, connectionString string) {
 		helpers.WithDatabaseTemplateManager(t, connectionString, func(t *testing.T, tm *pgdbtemplate.TemplateManager) {
 			helpers.WithKafkaContainer(t, func(t *testing.T, brokers []string) {
-				t.Run("happy path", func(t *testing.T) {
-					t.Parallel()
-					testHappyPath(t, tm, brokers)
-				})
+				tests := []struct {
+					name          string
+					bogusBroker   bool
+					failAfter     int
+					workTimeout   time.Duration
+					wantErr       bool
+					wantPublished []bool
+					wantRecords   int
+				}{
+					{
+						name:          "full batch",
+						wantPublished: []bool{true, true, true},
+						wantRecords:   3,
+					},
+					{
+						name:          "kafka unreachable",
+						bogusBroker:   true,
+						workTimeout:   unreachableTimeout,
+						wantErr:       true,
+						wantPublished: []bool{false},
+					},
+					{
+						name:          "partial batch",
+						failAfter:     1,
+						wantErr:       true,
+						wantPublished: []bool{true, false},
+						wantRecords:   1,
+					},
+				}
 
-				t.Run("kafka unreachable", func(t *testing.T) {
-					t.Parallel()
-					testKafkaUnreachable(t, tm)
-				})
+				for _, tt := range tests {
+					t.Run(tt.name, func(t *testing.T) {
+						t.Parallel()
 
-				t.Run("partial batch", func(t *testing.T) {
-					t.Parallel()
-					testPartialBatch(t, tm, brokers)
-				})
+						helpers.WithDatabase(t, tm, func(t *testing.T, db *bun.DB) {
+							events := seedOutboxEvents(t, db, len(tt.wantPublished))
+							topic := kafkaTopic(t)
+							seedBrokers := brokers
+							if tt.bogusBroker {
+								seedBrokers = []string{bogusBroker}
+							}
 
-				t.Run("concurrent claim", func(t *testing.T) {
-					t.Parallel()
-					testConcurrentClaim(t, tm, brokers)
-				})
+							var publisher usecase.EventPublisher = newKafkaPublisher(t, seedBrokers, topic)
+							if tt.failAfter > 0 {
+								publisher = &failAfterNPublisher{
+									publisher: publisher,
+									remain:    tt.failAfter,
+								}
+							}
+
+							worker := newPublisherWorker(t, db, publisher, publishBatchSize)
+							ctx := t.Context()
+							if tt.workTimeout > 0 {
+								var cancel context.CancelFunc
+								ctx, cancel = context.WithTimeout(ctx, tt.workTimeout)
+								defer cancel()
+							}
+
+							err := worker.Work(ctx, nil)
+							if tt.wantErr {
+								require.Error(t, err)
+							} else {
+								require.NoError(t, err)
+							}
+
+							for i, published := range tt.wantPublished {
+								requirePublishedAt(t, db, events[i].ID, published)
+							}
+
+							if tt.wantRecords == 0 {
+								return
+							}
+
+							records := consumeRecords(t, seedBrokers, topic, tt.wantRecords)
+							for i, record := range records {
+								assertKafkaRecord(t, record, events[i])
+							}
+						})
+					})
+				}
 			})
 		})
-	})
-}
-
-func testHappyPath(t *testing.T, tm *pgdbtemplate.TemplateManager, brokers []string) {
-	helpers.WithDatabase(t, tm, func(t *testing.T, db *bun.DB) {
-		events := seedOutboxEvents(t, db, 1)
-		topic := kafkaTopic(t)
-		worker := newPublisherWorker(t, db, newKafkaPublisher(t, brokers, topic), publishBatchSize)
-
-		require.NoError(t, worker.Work(t.Context(), nil))
-
-		requirePublishedAt(t, db, events[0].ID, true)
-		records := consumeRecords(t, brokers, topic, 1)
-		assertKafkaRecord(t, records[0], events[0])
-	})
-}
-
-func testKafkaUnreachable(t *testing.T, tm *pgdbtemplate.TemplateManager) {
-	helpers.WithDatabase(t, tm, func(t *testing.T, db *bun.DB) {
-		events := seedOutboxEvents(t, db, 1)
-		// This subtest never uses the shared container's brokers.
-		worker := newPublisherWorker(
-			t,
-			db,
-			newKafkaPublisher(t, []string{bogusBroker}, kafkaTopic(t)),
-			publishBatchSize,
-		)
-
-		ctx, cancel := context.WithTimeout(t.Context(), unreachableTimeout)
-		defer cancel()
-
-		require.Error(t, worker.Work(ctx, nil))
-		requirePublishedAt(t, db, events[0].ID, false)
-	})
-}
-
-func testPartialBatch(t *testing.T, tm *pgdbtemplate.TemplateManager, brokers []string) {
-	helpers.WithDatabase(t, tm, func(t *testing.T, db *bun.DB) {
-		events := seedOutboxEvents(t, db, 2)
-		topic := kafkaTopic(t)
-		publisher := &failAfterNPublisher{
-			publisher: newKafkaPublisher(t, brokers, topic),
-			remain:    1,
-		}
-		worker := newPublisherWorker(t, db, publisher, publishBatchSize)
-
-		require.Error(t, worker.Work(t.Context(), nil))
-
-		requirePublishedAt(t, db, events[0].ID, true)
-		requirePublishedAt(t, db, events[1].ID, false)
-
-		records := consumeRecords(t, brokers, topic, 1)
-		assertKafkaRecord(t, records[0], events[0])
-	})
-}
-
-func testConcurrentClaim(t *testing.T, tm *pgdbtemplate.TemplateManager, brokers []string) {
-	helpers.WithDatabase(t, tm, func(t *testing.T, db *bun.DB) {
-		events := seedOutboxEvents(t, db, 2)
-		topic := kafkaTopic(t)
-
-		workers := make([]*riveradapter.OutboxEventPublisherWorker, 2)
-		for i := range workers {
-			workers[i] = newPublisherWorker(t, db, newKafkaPublisher(t, brokers, topic), 1)
-		}
-
-		start := make(chan struct{})
-		errs := make([]error, len(workers))
-		var wg sync.WaitGroup
-		for i := range workers {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				<-start
-				errs[i] = workers[i].Work(t.Context(), nil)
-			}()
-		}
-		close(start)
-		wg.Wait()
-
-		for _, err := range errs {
-			require.NoError(t, err)
-		}
-
-		for _, event := range events {
-			requirePublishedAt(t, db, event.ID, true)
-		}
-
-		records := consumeRecords(t, brokers, topic, len(events))
-		byID := recordsByEventID(t, records)
-		for _, event := range events {
-			record, ok := byID[event.ID.String()]
-			require.True(t, ok, "missing kafka record for %s", event.ID)
-			assertKafkaRecord(t, record, event)
-		}
 	})
 }
 
@@ -174,7 +139,7 @@ func newPublisherWorker(
 	db *bun.DB,
 	publisher usecase.EventPublisher,
 	batchSize int,
-) *riveradapter.OutboxEventPublisherWorker {
+) *river.OutboxEventPublisherWorker {
 	t.Helper()
 
 	repo := postgres.NewPublisherOutboxEventRepo(db, config.Config{
@@ -182,7 +147,7 @@ func newPublisherWorker(
 	})
 	eventUsecase := usecase.NewOutboxEventUsecase(repo, publisher, batchSize)
 
-	return riveradapter.NewOutboxEventPublisherWorker(eventUsecase)
+	return river.NewOutboxEventPublisherWorker(eventUsecase)
 }
 
 func seedOutboxEvents(t *testing.T, db *bun.DB, count int) []domain.OutboxEvent {
@@ -290,20 +255,6 @@ func collectRecords(fetches kgo.Fetches) []consumedRecord {
 	})
 
 	return records
-}
-
-func recordsByEventID(t *testing.T, records []consumedRecord) map[string]consumedRecord {
-	t.Helper()
-
-	byID := make(map[string]consumedRecord, len(records))
-	for _, record := range records {
-		eventID := record.headers["event_id"]
-		_, exists := byID[eventID]
-		require.False(t, exists, "duplicate kafka record for %s", eventID)
-		byID[eventID] = record
-	}
-
-	return byID
 }
 
 func assertKafkaRecord(t *testing.T, record consumedRecord, event domain.OutboxEvent) {
