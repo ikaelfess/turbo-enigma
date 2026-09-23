@@ -25,11 +25,11 @@ import (
 )
 
 const (
-	consumeTimeout     = 5 * time.Second
-	followUpConsume    = 500 * time.Millisecond
-	unreachableTimeout = 5 * time.Second
-	claimTTL           = 2 * time.Minute
-	publishBatchSize   = 10
+	consumeTimeout         = 5 * time.Second
+	followUpConsumeTimeout = 500 * time.Millisecond
+	unreachableTimeout     = 5 * time.Second
+	claimTTL               = 2 * time.Minute
+	publishBatchSize       = 10
 
 	bogusBroker = "127.0.0.1:1"
 )
@@ -265,7 +265,7 @@ func consumeRecords(t *testing.T, brokers []string, topic string, want int) []co
 	}
 
 	if remain := time.Until(deadline); remain > 0 {
-		followCtx, followCancel := context.WithTimeout(ctx, min(remain, followUpConsume))
+		followCtx, followCancel := context.WithTimeout(ctx, min(remain, followUpConsumeTimeout))
 		defer followCancel()
 		records = append(records, collectRecords(client.PollFetches(followCtx))...)
 	}

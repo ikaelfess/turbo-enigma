@@ -20,6 +20,7 @@ type Producer struct {
 	topic  string
 }
 
+// New returns a producer that writes to topic. The caller must Close it.
 func New(brokers []string, topic string) (*Producer, error) {
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...),
