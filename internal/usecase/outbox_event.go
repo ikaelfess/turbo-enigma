@@ -7,11 +7,13 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ikaelfess/transactional-outbox/internal/adapters/kafka"
 	"github.com/ikaelfess/transactional-outbox/internal/adapters/postgres"
 	"github.com/ikaelfess/transactional-outbox/internal/domain"
 )
 
 var _ OutboxEventRepo = (*postgres.OutboxEventRepo)(nil)
+var _ EventPublisher = (*kafka.Producer)(nil)
 
 type OutboxEventRepo interface {
 	FindUnpublishedBatch(ctx context.Context, limit int) ([]domain.OutboxEvent, error)

@@ -18,7 +18,6 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/ikaelfess/transactional-outbox/internal/config"
-	"github.com/ikaelfess/transactional-outbox/internal/observability"
 )
 
 const (
@@ -31,7 +30,6 @@ type databaseParams struct {
 	Lifecycle fx.Lifecycle
 	Config    config.Config
 	Logger    zerolog.Logger
-	Telemetry *observability.Telemetry `optional:"true"`
 }
 
 func NewDatabase(p databaseParams) *bun.DB {
@@ -49,9 +47,7 @@ func NewDatabase(p databaseParams) *bun.DB {
 
 	otelHookOpts := []bunotel.Option{
 		bunotel.WithDBName(databaseName(p.Config.DatabaseUrl)),
-	}
-	if p.Telemetry != nil {
-		otelHookOpts = append(otelHookOpts, bunotel.WithTracerProvider(otel.GetTracerProvider()))
+		bunotel.WithTracerProvider(otel.GetTracerProvider()),
 	}
 
 	db := bun.

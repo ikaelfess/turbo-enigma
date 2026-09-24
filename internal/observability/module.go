@@ -9,5 +9,8 @@ var Module = fx.Module(
 
 	fx.Provide(
 		NewLogger,
+		NewTelemetry,
 	),
+
+	fx.Invoke(func(*Telemetry) {}),
 )

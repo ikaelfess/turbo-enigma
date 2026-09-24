@@ -8,11 +8,11 @@ import (
 	"github.com/ikaelfess/transactional-outbox/internal/usecase"
 )
 
+var _ OutboxEventUsecase = (*usecase.OutboxEventUsecase)(nil)
+
 type OutboxEventUsecase interface {
 	PublishBatch(context.Context) error
 }
-
-var _ OutboxEventUsecase = (*usecase.OutboxEventUsecase)(nil)
 
 type OutboxEventPublisherJobArgs struct{}
 
