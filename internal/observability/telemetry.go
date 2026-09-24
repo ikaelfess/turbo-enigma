@@ -19,19 +19,15 @@ import (
 	"go.uber.org/fx"
 )
 
-// Telemetry is the process-wide trace and metric setup.
-// Constructors that read the global providers depend on it so they run after setup.
-type Telemetry struct{}
-
-func NewTelemetry(lifecycle fx.Lifecycle, cfg LoggerConfig) (*Telemetry, error) {
+func Start(lifecycle fx.Lifecycle, cfg LoggerConfig) error {
 	shutdown, err := setupTelemetry(context.Background(), cfg.ServiceName)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	lifecycle.Append(fx.Hook{OnStop: shutdown})
 
-	return &Telemetry{}, nil
+	return nil
 }
 
 func setupTelemetry(ctx context.Context, serviceName string) (func(context.Context) error, error) {
@@ -48,8 +44,6 @@ func setupTelemetry(ctx context.Context, serviceName string) (func(context.Conte
 	}
 
 	res, err := resource.New(ctx,
-		resource.WithTelemetrySDK(),
-		resource.WithHost(),
 		resource.WithFromEnv(),
 		resource.WithAttributes(semconv.ServiceName(serviceName)),
 	)
