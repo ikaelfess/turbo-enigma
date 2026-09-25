@@ -6,14 +6,12 @@ import (
 	"fmt"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/plugin/kotel"
 	"go.uber.org/fx"
 
 	"github.com/ikaelfess/transactional-outbox/internal/config"
 	"github.com/ikaelfess/transactional-outbox/internal/domain"
-	"github.com/ikaelfess/transactional-outbox/internal/usecase"
 )
-
-var _ usecase.EventPublisher = (*Producer)(nil)
 
 type Producer struct {
 	client *kgo.Client
@@ -22,11 +20,16 @@ type Producer struct {
 
 // New returns a producer that writes to topic. The caller must Close it.
 func New(brokers []string, topic string) (*Producer, error) {
+	kotelService := kotel.NewKotel(
+		kotel.WithTracer(kotel.NewTracer()),
+		kotel.WithMeter(kotel.NewMeter()),
+	)
+
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		// The broker still decides. Compose leaves auto-creation off.
 		kgo.AllowAutoTopicCreation(),
+		kgo.WithHooks(kotelService.Hooks()...),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("kafka client: %w", err)

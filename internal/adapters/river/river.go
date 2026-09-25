@@ -16,14 +16,11 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/ikaelfess/transactional-outbox/internal/config"
-	"github.com/ikaelfess/transactional-outbox/internal/observability"
 )
 
 func NewRiverClient(
 	lifecycle fx.Lifecycle,
 	cfg config.Config,
-	// otelriver captures the global tracer provider in its constructor.
-	_ *observability.Telemetry,
 	workers *river.Workers,
 	periodicJobs []*river.PeriodicJob,
 ) (*river.Client[pgx.Tx], error) {

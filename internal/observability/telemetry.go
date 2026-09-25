@@ -1,24 +1,97 @@
 package observability
 
 import (
-	"github.com/uptrace/uptrace-go/uptrace"
-	"go.uber.org/fx"
+	"context"
+	"errors"
+	"os"
 
-	"github.com/ikaelfess/transactional-outbox/internal/config"
+	runtimemetric "go.opentelemetry.io/contrib/instrumentation/runtime"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	noopmetric "go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
+	nooptrace "go.opentelemetry.io/otel/trace/noop"
+	"go.uber.org/fx"
 )
 
-type Telemetry struct{}
+func Start(lifecycle fx.Lifecycle, cfg LoggerConfig) error {
+	shutdown, err := setupTelemetry(context.Background(), cfg.ServiceName)
+	if err != nil {
+		return err
+	}
 
-func NewTelemetry(lc fx.Lifecycle, cfg config.Config, loggerConfig LoggerConfig) *Telemetry {
-	uptrace.ConfigureOpentelemetry(
-		uptrace.WithDSN(cfg.UptraceDSN),
-		uptrace.WithServiceName(loggerConfig.ServiceName),
-		uptrace.WithDeploymentEnvironment("local"),
-		uptrace.WithMetricsDisabled(),
-		uptrace.WithLoggingDisabled(),
+	lifecycle.Append(fx.Hook{OnStop: shutdown})
+
+	return nil
+}
+
+func setupTelemetry(ctx context.Context, serviceName string) (func(context.Context) error, error) {
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" {
+		otel.SetTracerProvider(nooptrace.NewTracerProvider())
+		otel.SetMeterProvider(noopmetric.NewMeterProvider())
+
+		return func(context.Context) error { return nil }, nil
+	}
+
+	res, err := resource.New(ctx,
+		resource.WithFromEnv(),
+		resource.WithAttributes(semconv.ServiceName(serviceName)),
 	)
+	if err != nil && !errors.Is(err, resource.ErrPartialResource) && !errors.Is(err, resource.ErrSchemaURLConflict) {
+		return nil, err
+	}
 
-	lc.Append(fx.Hook{OnStop: uptrace.Shutdown})
+	traceExporter, err := otlptracehttp.New(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	return &Telemetry{}
+	tracerProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(traceExporter),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tracerProvider)
+
+	metricExporter, err := otlpmetrichttp.New(ctx,
+		otlpmetrichttp.WithTemporalitySelector(sdkmetric.DeltaTemporalitySelector),
+		otlpmetrichttp.WithAggregationSelector(exponentialHistogramSelector),
+	)
+	if err != nil {
+		return nil, errors.Join(err, tracerProvider.Shutdown(ctx))
+	}
+
+	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+		sdkmetric.WithResource(res),
+	)
+	otel.SetMeterProvider(meterProvider)
+
+	if err := runtimemetric.Start(runtimemetric.WithMeterProvider(meterProvider)); err != nil {
+		return nil, errors.Join(err, meterProvider.Shutdown(ctx), tracerProvider.Shutdown(ctx))
+	}
+
+	return func(stopCtx context.Context) error {
+		return errors.Join(tracerProvider.Shutdown(stopCtx), meterProvider.Shutdown(stopCtx))
+	}, nil
+}
+
+func exponentialHistogramSelector(kind sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	if kind == sdkmetric.InstrumentKindHistogram {
+		return sdkmetric.AggregationBase2ExponentialHistogram{
+			MaxSize:  160,
+			MaxScale: 20,
+		}
+	}
+
+	return sdkmetric.DefaultAggregationSelector(kind)
 }

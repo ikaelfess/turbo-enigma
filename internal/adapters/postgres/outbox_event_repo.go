@@ -61,7 +61,7 @@ func (o *OutboxEventRepo) FindUnpublishedBatch(
 			Model((*OutboxEvent)(nil)).
 			Column("id").
 			Where("published_at IS NULL").
-			Where("(claimed_until IS NULL OR claimed_until < now())").
+			Where("(claimed_until IS NULL OR claimed_until < NOW())").
 			Order("created_at ASC").
 			Limit(limit).
 			For("UPDATE SKIP LOCKED")
@@ -69,7 +69,7 @@ func (o *OutboxEventRepo) FindUnpublishedBatch(
 		claimed := tx.NewUpdate().
 			Model((*OutboxEvent)(nil)).
 			TableExpr("to_claim").
-			Set("claimed_until = now() + ?::interval", claimTTL).
+			Set("claimed_until = NOW() + ?::interval", claimTTL).
 			Where("outbox_event.id = to_claim.id").
 			Returning("?TableAlias.*")
 

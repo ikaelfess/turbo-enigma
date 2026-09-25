@@ -10,4 +10,6 @@ var Module = fx.Module(
 	fx.Provide(
 		NewLogger,
 	),
+
+	fx.Invoke(Start),
 )
