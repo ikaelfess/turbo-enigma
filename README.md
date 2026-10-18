@@ -1,137 +1,191 @@
 # Transactional Outbox
 
-A Go service that creates orders and writes an `order.created` outbox event in the same PostgreSQL transaction. That pairing is the transactional outbox pattern: the business row and the event either both commit or neither does, so a later publisher can emit the event without dual-write races.
+This service takes an order over HTTP and stores the order together with an `order.created` event in one Postgres transaction. The request only has to commit to the database: a failed commit leaves nothing to publish, and if the process that talks to Kafka dies, the event is still in the table for the next run. That event row is the order itself — id, total, and line items — and a short claim lease keeps two publishers from sending the same row at the same time.
 
-## Architecture
+- **One commit.** `orders`, `order_items`, and `outbox_events` are inserted in a single transaction.
+- **Publish later.** [River](https://riverqueue.com/) runs the publisher every **1 minute**, and once when that process starts. Each run claims up to **100** unpublished rows.
+- **One row, one publisher.** Claims use `FOR UPDATE SKIP LOCKED` and hold the row for **2 minutes**. The queue allows **5** workers.
+- **At least once.** `published_at` is set only after Kafka acks the record (all in-sync replicas). A crash before that update sends the order again once the lease expires.
+- **Kafka record.** Topic `order.created`, **3** partitions, replication factor **1**. The key is the order id. Headers are `event_id` and `event_type`.
+- **Local stack.** Go **1.27**, Postgres **18.4**, Kafka (Confluent local **8.3.2**). API on port **3000**. Kafka UI on port **8080**.
 
-Hexagonal layout with Uber Fx for wiring:
+```bash
+curl -sS -X POST http://localhost:3000/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"items":[{"item_name":"Wireless Mouse","quantity":1,"unit_price_cents":100},{"item_name":"USB-C Cable","quantity":2,"unit_price_cents":400}]}'
+# 201
+# {"id":"<uuid>","total_cents":900}
+```
 
-| Layer | Path | Role |
-| --- | --- | --- |
-| Entry points | `cmd/api`, `cmd/outbox-event-publisher`, `cmd/outbox-event-consumer` | Process mains |
-| Domain | `internal/domain` | Order validation, outbox event types |
-| Use case | `internal/usecase` | Create-order and outbox publish orchestration |
-| HTTP adapter | `internal/adapters/http` | Routes, JSON, middleware |
-| Postgres adapter | `internal/adapters/postgres` | Transactional writes and outbox claim |
-| Kafka adapter | `internal/adapters/kafka` | Sync produce of outbox events |
-| River adapter | `internal/adapters/river` | Periodic publish jobs |
-| Config / logs | `internal/config`, `internal/observability` | Env config, zerolog |
+The response returns only after that commit. The same transaction has already inserted an `outbox_events` row with `event_type` `order.created`. With the publisher running, that row is sent on the next run, at most a minute later.
 
-## Prerequisites
+---
 
-- [mise](https://mise.jdx.dev/) for Go, golangci-lint, lefthook, and goose
-- [Go](https://go.dev/) 1.27 (see `go.mod` / `mise.toml`)
-- [Docker Compose](https://docs.docker.com/compose/) for local Postgres, Kafka, and the API
-- [lefthook](https://github.com/evilmartians/lefthook) applies `golangci-lint fmt` (goimports) on staged `*.go` at pre-commit
-- GitHub Actions job `ci` on pull requests and pushes to `main` is the merge-quality gate: `golangci-lint fmt --diff`, `golangci-lint run`, `go build ./...`, and `go test ./...`
+## Contents
+
+- [Getting started](#getting-started)
+- [See the event](#see-the-event)
+- [The write](#the-write)
+- [Publishing](#publishing)
+- [HTTP API](#http-api)
+- [Configuration](#configuration)
+- [Layout](#layout)
+- [Develop](#develop)
 
 ## Getting started
 
-Install toolchain with [mise](https://mise.jdx.dev/), copy env vars if needed, then start Compose. The API waits until Postgres is healthy and goose has applied `migrations/`.
+Install [mise](https://mise.jdx.dev/) and [Docker Compose](https://docs.docker.com/compose/), then:
 
 ```bash
 make tools
-make up
+make up-all
 ```
 
-`make up` creates `.env` from `.env.example` when it is missing, then runs the API (Postgres and migrations start as dependencies). It starts no Kafka containers, because the API does not talk to a broker; use `make up-all` for those. Other targets: `make help`, `make up-d`, `make up-all`, `make down`, `make logs`, `make migrate`, `make hooks`.
+`make tools` installs Go 1.27.0, goose, golangci-lint 2.13.2, and lefthook from `mise.toml`.
 
-The API listens on `http://localhost:3000`. Health:
+`make up-all` copies `.env.example` to `.env` when `.env` is missing, runs goose migrations, and starts Postgres, Kafka, the `order.created` topic, Kafka UI, the API, and the outbox publisher.
+
+> `cmd/outbox-event-consumer` is an empty `main`. Compose leaves that service commented out.
+
+| URL | What |
+| --- | --- |
+| http://localhost:3000 | API |
+| http://localhost:8080 | Kafka UI, cluster `local` |
 
 ```bash
 curl -sS http://localhost:3000/health
+# OK
 ```
+
+Other targets: `make up` (API, Postgres, and migrations only), `make up-d` (that set in the background), `make down`, `make logs`, `make migrate`, `make help`.
+
+Named volumes survive `make down`. `docker compose down -v` removes them. Do that when Postgres was created from an older `outbox_events` table that has no `claimed_until` column.
+
+## See the event
 
 Create an order:
 
 ```bash
 curl -sS -X POST http://localhost:3000/orders \
   -H 'Content-Type: application/json' \
-  -d '{
-    "items": [
-      {"item_name": "Wireless Mouse", "quantity": 1, "unit_price_cents": 100},
-      {"item_name": "USB-C Cable", "quantity": 2, "unit_price_cents": 400}
-    ]
-  }'
+  -d '{"items":[{"item_name":"Wireless Mouse","quantity":1,"unit_price_cents":100},{"item_name":"USB-C Cable","quantity":2,"unit_price_cents":400}]}'
 ```
 
-Successful response (`201`):
-
-```json
-{"id":"<uuid>","total_cents":900}
-```
-
-## HTTP API
-
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/health` | Liveness (`OK`) |
-| `POST` | `/orders` | Create order and outbox event |
-
-`POST /orders` body:
-
-| Field | Type | Rules |
-| --- | --- | --- |
-| `items` | array | At least one item |
-| `items[].item_name` | string | Non-empty |
-| `items[].quantity` | int | Greater than zero |
-| `items[].unit_price_cents` | int64 | Non-negative |
-
-## Database
-
-Goose migrations live in `migrations/`. Compose runs them via `go tool goose up` in the `postgres_migrations` service.
-
-| Table | Purpose |
-| --- | --- |
-| `orders` | Order header (`id` UUIDv7, `total_cents`) |
-| `order_items` | Line items keyed by `order_id` |
-| `outbox_events` | Event row: `aggregate_id`, `event_type`, JSON `payload`, `published_at`, `claimed_until` |
-
-The publisher claims unpublished rows via `claimed_until`. That column lives on the original `create_outbox_events` migration, so a database created before it must be recreated: `docker compose down -v` (named volumes survive `make down`).
-
-Local goose (same env as Compose):
+The outbox row is there immediately. `published_at` stays null until the publisher runs:
 
 ```bash
-export GOOSE_DRIVER=postgres
-export GOOSE_DBSTRING='postgres://postgres:postgres@localhost:5432/transactional_outbox_development?sslmode=disable'
-export GOOSE_MIGRATION_DIR=./migrations
-export GOOSE_TABLE=goose_migrations
-go tool goose up
+docker compose exec postgres psql -U postgres -d transactional_outbox_development \
+  -c "SELECT event_type, published_at FROM outbox_events ORDER BY created_at DESC LIMIT 5;"
 ```
 
-## Messaging
-
-`make up-all` starts a single-node Kafka broker in KRaft mode plus a UI. The outbox event publisher claims unpublished rows and produces them to Kafka; the consumer is still a stub.
-
-| Service | Image | Role |
-| --- | --- | --- |
-| `kafka` | `confluentinc/confluent-local:8.3.2` | Broker and controller in one node, reachable only inside the Compose network at `kafka:9092` |
-| `kafka_topics` | `confluentinc/confluent-local:8.3.2` | One-shot `kafka-topics --create --if-not-exists`, 3 partitions, replication factor 1 |
-| `kafka_ui` | `kafbat/kafka-ui:v1.5.0` | Browser UI on [localhost:8080](http://localhost:8080), single cluster `local` defined in `compose.yml` |
-
-No Kafka port is published to the host, so a binary run outside Compose cannot reach the broker; only the UI's HTTP port is exposed. Topic auto-creation is disabled, so an unknown topic name fails instead of silently creating a single-partition topic. The broker's log directory is kept in the `kafka_data` volume, so consumer group offsets survive a restart.
-
-| Env var | Default | Purpose |
-| --- | --- | --- |
-| `KAFKA_BROKERS` | `kafka:9092` | Comma-separated bootstrap servers |
-| `KAFKA_TOPIC` | `order.created` | Topic for outbox events; also drives `kafka_topics` |
-| `KAFKA_CONSUMER_GROUP` | `outbox-event-consumer` | Consumer group id |
-| `OUTBOX_BATCH_SIZE` | `100` | Unpublished events claimed per River job |
-| `OUTBOX_CLAIM_TTL` | `2m` | How long a claimed unpublished row stays exclusive |
-
-These have defaults rather than being required, so the `api` service, which shares one `Config` struct, still boots without a broker. `.env.example` lists them commented out: uncomment one only to override it, because `cleanenv` treats an empty value as a value and not as a missing one.
-
-Inspect the topic without the UI:
+Wait for the next publisher run (at most one minute), then open topic `order.created` in the [Kafka UI](http://localhost:8080). The record value is the order JSON. Confirm the topic itself with:
 
 ```bash
 docker compose exec kafka kafka-topics \
   --bootstrap-server localhost:9092 --describe --topic order.created
 ```
 
-## Tests
+Kafka listens only on the Compose network. The UI's HTTP port is the one published on the host.
 
-Integration tests start Postgres with Testcontainers, clone a templated database per case, and hit a real HTTP server.
+## The write
+
+`POST /orders` checks the line items, sums `quantity * unit_price_cents`, and then [`OrderStore.Create`](internal/adapters/postgres/order_store.go) does three inserts in one transaction:
+
+1. `orders` — UUIDv7 `id`, `total_cents`
+2. `order_items` — one row per line
+3. `outbox_events` — `event_type` `order.created`, JSON payload `{id, total_cents, items}`
+
+The handler writes `201` after that commit. Goose applies `migrations/` in the `postgres_migrations` container before the API starts.
+
+## Publishing
+
+[`PublishBatch`](internal/usecase/outbox_event.go) runs inside a River job ([`periodic_jobs.go`](internal/adapters/river/periodic_jobs.go)):
+
+1. Lock unpublished rows whose `claimed_until` is null or already past, oldest first, with `FOR UPDATE SKIP LOCKED`.
+2. Set `claimed_until` to now plus the claim TTL (default **2m**).
+3. Produce each record synchronously to Kafka.
+4. Set `published_at` on the records Kafka accepted.
+5. On the first produce error, stop the batch, mark the earlier successes, and return the error. The failed row stays unpublished until the lease expires.
+
+The Kafka record:
+
+| Field | Value |
+| --- | --- |
+| Topic | `KAFKA_TOPIC`, default `order.created` |
+| Key | Order id (`aggregate_id`) |
+| Headers | `event_id`, `event_type` (`order.created`) |
+| Value | `{"id","total_cents","items":[{"id","item_name","quantity","unit_price_cents"}]}` |
+
+Compose creates that topic with 3 partitions and replication factor 1, and turns broker auto-creation off. The broker log stays in the `kafka_data` volume, so consumer offsets survive a restart.
+
+## HTTP API
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `GET` | `/health` | `200` and the body `OK` |
+| `POST` | `/orders` | `201` and `{"id","total_cents"}` |
+
+`POST /orders` body:
+
+| Field | Rule |
+| --- | --- |
+| `items` | At least one item |
+| `items[].item_name` | Non-empty string |
+| `items[].quantity` | Integer greater than zero |
+| `items[].unit_price_cents` | Integer, zero or greater |
+
+Invalid JSON returns `400` and `invalid request body`. Any error from creating the order returns `422` and the error text (`order must contain at least one item`, `item name must not be empty`, `quantity must be greater than zero`, `unit price must not be negative`).
+
+## Configuration
+
+One [`Config`](internal/config/config.go) struct serves every process. Each process reads the fields it uses. Compose passes these through from `.env`.
+
+| Variable | Default | Role |
+| --- | --- | --- |
+| `DATABASE_URL` | required | Postgres URL |
+| `SERVER_ADDRESS` | `localhost:3000` | API listen address. `.env.example` sets `0.0.0.0:3000` so the published port works |
+| `OUTBOX_BATCH_SIZE` | `100` | Rows claimed per job |
+| `OUTBOX_CLAIM_TTL` | `2m` | How long a claim stays exclusive |
+| `WORKERS_NUM` | `5` | River workers on the default queue |
+| `KAFKA_BROKERS` | `kafka:9092` | Bootstrap servers |
+| `KAFKA_TOPIC` | `order.created` | Topic the publisher writes, and the topic Compose creates |
+| `KAFKA_CONSUMER_GROUP` | `outbox-event-consumer` | Reserved for the consumer entrypoint |
+
+`DB_MAX_CONNS` (20), `DB_MIN_CONNS` (5), and `DB_MAX_CONN_LIFETIME` (30m) size the Postgres pools. `SHUTDOWN_TIMEOUT` (20s), `READ_TIMEOUT` (5s), `WRITE_TIMEOUT` (10s), and `IDLE_TIMEOUT` (30s) belong to the API server.
+
+> Set a Kafka or outbox variable in `.env` only to override it. An empty value counts as set, so `KAFKA_BROKERS=` replaces the default with an empty broker list.
+
+**OpenTelemetry.** Set `OTEL_EXPORTER_OTLP_ENDPOINT` to export traces and metrics over OTLP/HTTP. Leave it unset and both providers are no-ops. HTTP (except `/health`), Bun SQL, the Kafka producer, and River jobs are instrumented. Optional companions in `.env.example`: `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_COMPRESSION`, `OTEL_EXPORTER_OTLP_TIMEOUT`, `OTEL_RESOURCE_ATTRIBUTES`.
+
+## Layout
+
+| Path | Role |
+| --- | --- |
+| `cmd/api` | HTTP server |
+| `cmd/outbox-event-publisher` | River publisher |
+| `cmd/outbox-event-consumer` | Empty `main` |
+| `internal/domain` | Order checks and the outbox event |
+| `internal/usecase` | Create-order and publish-batch |
+| `internal/adapters/http` | Routes, JSON, middleware |
+| `internal/adapters/postgres` | Transactional writes and the claim query |
+| `internal/adapters/kafka` | Sync produce |
+| `internal/adapters/river` | Periodic job |
+| `internal/config`, `internal/observability` | Env config, zerolog, OTLP |
+| `migrations/` | Goose migrations |
+
+Uber Fx wires each process.
+
+## Develop
+
+Integration tests start Postgres 18.4 and Kafka with Testcontainers, so Docker has to be running.
 
 ```bash
 make test
+make lint
+make build
+make hooks
 ```
+
+`make hooks` installs a lefthook pre-commit hook that runs `golangci-lint fmt` on staged Go files.
+
+Pull requests and pushes to `main` run `golangci-lint fmt --diff`, `golangci-lint run`, `go build ./...`, and `go test ./...`.
