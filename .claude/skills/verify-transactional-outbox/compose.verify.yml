@@ -1,0 +1,11 @@
+# Verification overlay: remaps host ports so a run never collides with
+# whatever already listens on 3000/5432/8080, and drops the Postgres host port.
+services:
+  api:
+    ports: !override
+      - "${VERIFY_API_PORT:-13000}:3000"
+  postgres:
+    ports: !reset []
+  kafka_ui:
+    ports: !override
+      - "${VERIFY_UI_PORT:-18080}:8080"
