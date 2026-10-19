@@ -36,3 +36,6 @@ profile.cov
 
 # Git worktrees
 .worktrees
+
+# verification evidence
+.verify/
