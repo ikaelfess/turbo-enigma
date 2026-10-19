@@ -136,3 +136,25 @@ func TestOutboxEvent_ToDomain(t *testing.T) {
 
 	require.Equal(t, want, got)
 }
+
+func TestNewConsumedEvent(t *testing.T) {
+	t.Parallel()
+
+	event := domain.OutboxEvent{
+		ID:          uuid.New(),
+		AggregateID: uuid.New(),
+		EventType:   domain.OrderCreatedEventType,
+		Payload:     domain.OutboxEventPayload{ID: uuid.New(), TotalCents: 500},
+	}
+
+	model, err := NewConsumedEvent(event)
+	require.NoError(t, err)
+	require.Equal(t, event.ID, model.EventID)
+	require.Equal(t, event.AggregateID, model.AggregateID)
+	require.Equal(t, "order.created", model.EventType)
+
+	var payload domain.OutboxEventPayload
+	require.NoError(t, json.Unmarshal(model.Payload, &payload))
+	require.Equal(t, event.Payload.TotalCents, payload.TotalCents)
+	require.Equal(t, event.Payload.ID, payload.ID)
+}
