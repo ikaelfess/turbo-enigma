@@ -43,9 +43,7 @@ make up-all
 
 `make tools` installs Go 1.27.0, goose, golangci-lint 2.13.2, and lefthook from `mise.toml`.
 
-`make up-all` copies `.env.example` to `.env` when `.env` is missing, runs goose migrations, and starts Postgres, Kafka, the `order.created` topic, Kafka UI, the API, and the outbox publisher.
-
-> `cmd/outbox-event-consumer` is an empty `main`. Compose leaves that service commented out.
+`make up-all` copies `.env.example` to `.env` when `.env` is missing, runs goose migrations, and starts Postgres, Kafka, the `order.created` topic, Kafka UI, the API, the outbox publisher, and the outbox consumer.
 
 | URL | What |
 | --- | --- |
@@ -118,6 +116,22 @@ The Kafka record:
 
 Compose creates that topic with 3 partitions and replication factor 1, and turns broker auto-creation off. The broker log stays in the `kafka_data` volume, so consumer offsets survive a restart.
 
+## Consuming
+
+`cmd/outbox-event-consumer` joins group `KAFKA_CONSUMER_GROUP` on `KAFKA_TOPIC` and decodes each record back into an outbox event (`event_id` and `event_type` headers, order id key, JSON value). [`Handle`](internal/usecase/consumed_event.go) then runs `INSERT ... ON CONFLICT (event_id) DO NOTHING` into `consumed_events`, so a redelivered record never adds a second row.
+
+- **Commit after the write.** Auto-commit is off. An offset is committed only once its write succeeded.
+- **Retry in place.** A failed write is retried with backoff (100ms doubling to 5s). The partition does not advance past it.
+- **Skip the undecodable.** A record with a missing header, a bad key, or bad JSON can never succeed. It is logged at error level and skipped.
+- **Graceful stop.** On SIGTERM the consumer stops polling, finishes the in-flight record, commits, and leaves the group.
+
+Check a consumed event:
+
+```bash
+docker compose exec postgres psql -U postgres -d transactional_outbox_development \
+  -c "SELECT event_id, aggregate_id, event_type, consumed_at FROM consumed_events ORDER BY consumed_at DESC LIMIT 5;"
+```
+
 ## HTTP API
 
 | Method | Path | Result |
@@ -148,8 +162,8 @@ One [`Config`](internal/config/config.go) struct serves every process. Each proc
 | `OUTBOX_CLAIM_TTL` | `2m` | How long a claim stays exclusive |
 | `WORKERS_NUM` | `5` | River workers on the default queue |
 | `KAFKA_BROKERS` | `kafka:9092` | Bootstrap servers |
-| `KAFKA_TOPIC` | `order.created` | Topic the publisher writes, and the topic Compose creates |
-| `KAFKA_CONSUMER_GROUP` | `outbox-event-consumer` | Reserved for the consumer entrypoint |
+| `KAFKA_TOPIC` | `order.created` | Topic the publisher writes and the consumer reads, and the topic Compose creates |
+| `KAFKA_CONSUMER_GROUP` | `outbox-event-consumer` | Consumer group the consumer joins |
 
 `DB_MAX_CONNS` (20), `DB_MIN_CONNS` (5), and `DB_MAX_CONN_LIFETIME` (30m) size the Postgres pools. `SHUTDOWN_TIMEOUT` (20s), `READ_TIMEOUT` (5s), `WRITE_TIMEOUT` (10s), and `IDLE_TIMEOUT` (30s) belong to the API server.
 
@@ -163,12 +177,12 @@ One [`Config`](internal/config/config.go) struct serves every process. Each proc
 | --- | --- |
 | `cmd/api` | HTTP server |
 | `cmd/outbox-event-publisher` | River publisher |
-| `cmd/outbox-event-consumer` | Empty `main` |
+| `cmd/outbox-event-consumer` | Kafka consumer |
 | `internal/domain` | Order checks and the outbox event |
-| `internal/usecase` | Create-order and publish-batch |
+| `internal/usecase` | Create-order, publish-batch, and handle-consumed-event |
 | `internal/adapters/http` | Routes, JSON, middleware |
-| `internal/adapters/postgres` | Transactional writes and the claim query |
-| `internal/adapters/kafka` | Sync produce |
+| `internal/adapters/postgres` | Transactional writes, the claim query, and the idempotent consumed-event insert |
+| `internal/adapters/kafka` | Sync produce and the group consumer |
 | `internal/adapters/river` | Periodic job |
 | `internal/config`, `internal/observability` | Env config, zerolog, OTLP |
 | `migrations/` | Goose migrations |

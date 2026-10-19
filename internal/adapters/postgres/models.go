@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -119,4 +120,28 @@ func (e *OutboxEvent) ToDomain() *domain.OutboxEvent {
 	)
 
 	return outboxEvent
+}
+
+type ConsumedEvent struct {
+	bun.BaseModel `bun:"table:consumed_events"`
+
+	EventID     uuid.UUID       `bun:"event_id,pk,type:uuid"`
+	AggregateID uuid.UUID       `bun:"aggregate_id,type:uuid,notnull"`
+	EventType   string          `bun:"event_type,notnull"`
+	Payload     json.RawMessage `bun:"payload,type:jsonb,notnull"`
+	ConsumedAt  time.Time       `bun:"consumed_at,notnull,default:now()"`
+}
+
+func NewConsumedEvent(event domain.OutboxEvent) (*ConsumedEvent, error) {
+	payload, err := json.Marshal(event.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal consumed event payload: %w", err)
+	}
+
+	return &ConsumedEvent{
+		EventID:     event.ID,
+		AggregateID: event.AggregateID,
+		EventType:   string(event.EventType),
+		Payload:     payload,
+	}, nil
 }
