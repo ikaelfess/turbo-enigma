@@ -82,11 +82,18 @@ services:
       kafka_topics:
         condition: service_completed_successfully
 
-  # Enable once cmd/outbox-event-consumer has an implementation. It will need
-  # the same depends_on block as outbox_event_publisher, restated in full.
-  # outbox_event_consumer:
-  #   <<: *go-service
-  #   command: ["go", "run", "./cmd/outbox-event-consumer"]
+  outbox_event_consumer:
+    <<: *go-service
+    command: ["go", "run", "./cmd/outbox-event-consumer"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres_migrations:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      kafka_topics:
+        condition: service_completed_successfully
 
   postgres_migrations:
     <<: *go-service
